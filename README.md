@@ -1,6 +1,6 @@
 # 📮 Telegram Price Bot - Бот для рассылки прайс-листов
 
-[![Tests](https://github.com/NnicanBuak/telegram-price-bot/workflows/Tests%20and%20Linting/badge.svg)](https://github.com/NnicanBuak/telegram-price-bot/actions)
+[![Tests](https://github.com/NnicanBuak/telegram-price-bot/workflows/CI/badge.svg)](https://github.com/NnicanBuak/telegram-price-bot/actions)
 [![Coverage](https://codecov.io/gh/NnicanBuak/telegram-price-bot/branch/main/graph/badge.svg)](https://codecov.io/gh/NnicanBuak/telegram-price-bot)
 [![Python](https://img.shields.io/badge/python-3.8%2B-blue)](https://www.python.org)
 [![Code style: black](https://img.shields.io/badge/code%20style-black-000000.svg)](https://github.com/psf/black)
