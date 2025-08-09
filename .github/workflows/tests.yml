@@ -25,74 +25,59 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
 
-      - name: Cache pip packages
-        uses: actions/cache@v4
-        with:
-          path: ~/.cache/pip
-          key: ${{ runner.os }}-pip-${{ hashFiles('requirements-dev.txt') }}
-          restore-keys: |
-            ${{ runner.os }}-pip-
-
-      - name: Install dependencies
+      - name: Install pipx & Poetry
         run: |
           python -m pip install --upgrade pip
-          pip install -r requirements-dev.txt
+          python -m pip install --user pipx
+          pipx install poetry
+
+      - name: Cache Poetry virtualenv
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pypoetry
+          key: ${{ runner.os }}-poetry-${{ hashFiles('poetry.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-poetry-
+
+      - name: Install dependencies
+        run: poetry install --no-interaction --no-root
 
       - name: Create .env file for tests
         run: |
           cat > .env << EOF
-          # В GitHub Actions используем ТОЛЬКО тестовые переменные
-          # Основные переменные намеренно НЕ указываем
-
-          # Тестовые переменные из secrets (приоритет над основными)
           TEST_BOT_TOKEN=${{ secrets.TEST_BOT_TOKEN || '1234567890:AABBCCDDEEFFGGHHIIJJKKLLMMNNOOPP-TEST' }}
           TEST_ADMIN_IDS=${{ secrets.TEST_ADMIN_IDS || '123456789,987654321' }}
-
-          # Окружение
           ENVIRONMENT=testing
           LOG_LEVEL=DEBUG
-
-          # Настройки для тестов
           MAILING_DELAY=0.0
           MAILING_BATCH_SIZE=5
           SEND_STARTUP_NOTIFICATIONS=false
           AUTO_BACKUP=false
           EOF
 
-          echo "✅ Создан .env с тестовыми переменными"
-          echo "TEST_BOT_TOKEN: ${{ secrets.TEST_BOT_TOKEN && 'установлен из secrets' || 'используется fallback' }}"
-          echo "TEST_ADMIN_IDS: ${{ secrets.TEST_ADMIN_IDS && 'установлен из secrets' || 'используется fallback' }}"
-
       - name: Verify configuration
         run: |
-          echo "🔍 Проверка конфигурации..."
-          python -c "
+          poetry run python -c "
           from src.config import Config
           config = Config()
           print('✅ Конфигурация загружена успешно')
           print(config.get_test_summary())
-          print(f'Используется тестовый токен: {config.using_test_token}')
-          print(f'Используются тестовые админы: {config.using_test_admins}')
           "
 
       - name: Run linting
         run: |
-          # Форматирование
-          black . --check --diff
-          isort . --check-only --diff
-
-          # Линтинг
-          flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics
-          flake8 . --count --exit-zero --max-complexity=10 --max-line-length=120 --statistics
+          poetry run black . --check --diff
+          poetry run isort . --check-only --diff
+          poetry run flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics
+          poetry run flake8 . --count --exit-zero --max-complexity=10 --max-line-length=120 --statistics
 
       - name: Type checking
-        run: |
-          mypy src/ --ignore-missing-imports --no-strict-optional
+        run: poetry run mypy src/ --ignore-missing-imports --no-strict-optional
         continue-on-error: true
 
       - name: Run tests with coverage
         run: |
-          pytest tests/ -v --cov=src --cov-report=xml --cov-report=term-missing \
+          poetry run pytest tests/ -v --cov=src --cov-report=xml --cov-report=term-missing \
             --junitxml=junit.xml --tb=short
 
       - name: Upload test report
@@ -122,20 +107,21 @@ jobs:
         with:
           python-version: "3.11"
 
-      - name: Install Poetry
-        run: pipx install poetry
+      - name: Install pipx & Poetry
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install --user pipx
+          pipx install poetry
 
       - name: Install dependencies
         run: poetry install --no-interaction --no-root
 
       - name: Security check with Bandit
-        run: |
-          bandit -r src/ -ll -x tests,venv,.venv
+        run: poetry run bandit -r src/ -ll -x tests,venv,.venv
         continue-on-error: true
 
       - name: Check dependencies with Safety
-        run: |
-          safety check --json
+        run: poetry run safety check --json
         continue-on-error: true
 
   integration:
@@ -151,16 +137,19 @@ jobs:
         with:
           python-version: "3.11"
 
-      - name: Install dependencies
+      - name: Install pipx & Poetry
         run: |
           python -m pip install --upgrade pip
-          pip install -r requirements-dev.txt
+          python -m pip install --user pipx
+          pipx install poetry
+
+      - name: Install dependencies
+        run: poetry install --no-interaction --no-root
 
       - name: Create test environment
         run: |
           cat > .env << EOF
-          # Используем только тестовые переменные
-          TEST_BOT_TOKEN=${{ secrets.TEST_BOT_TOKEN || '1234567890:AABBCCDDEEFFGGHHIIJJKKLLMMNNOOPP-TEST  ' }}
+          TEST_BOT_TOKEN=${{ secrets.TEST_BOT_TOKEN || '1234567890:AABBCCDDEEFFGGHHIIJJKKLLMMNNOOPP-TEST' }}
           TEST_ADMIN_IDS=${{ secrets.TEST_ADMIN_IDS || '123456789,987654321' }}
           ENVIRONMENT=testing
           LOG_LEVEL=INFO
@@ -168,14 +157,12 @@ jobs:
           EOF
 
       - name: Run integration tests
-        run: |
-          pytest tests/ -v -m integration --tb=short
+        run: poetry run pytest tests/ -v -m integration --tb=short
         env:
           ENVIRONMENT: testing
 
       - name: Test bot startup (dry run)
-        run: |
-          timeout 10s python src/main.py || [ $? -eq 124 ]
+        run: timeout 10s poetry run python src/main.py || [ $? -eq 124 ]
         env:
           ENVIRONMENT: testing
         continue-on-error: true
