@@ -1,8 +1,8 @@
 """
-Модуль для работы с базой данных
+Упрощенный модуль для работы с SQLite базой данных
+Объединяет models + crud для простоты
 """
 
-import json
 from datetime import datetime
 from typing import List, Optional
 from sqlalchemy import (
@@ -14,12 +14,19 @@ from sqlalchemy import (
     DateTime,
     JSON,
     Boolean,
+    select,
+    update,
+    delete,
+    desc,
 )
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker, Session
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
 
 Base = declarative_base()
+
+
+# ========== МОДЕЛИ (как в оригинале) ==========
 
 
 class Template(Base):
@@ -66,16 +73,15 @@ class Mailing(Base):
     completed_at = Column(DateTime, nullable=True)
 
 
+# ========== КЛАСС БАЗЫ ДАННЫХ (как в оригинале) ==========
+
+
 class Database:
-    """Класс для работы с базой данных"""
+    """Класс для работы с SQLite базой данных"""
 
     def __init__(self, database_url: str):
-        # Преобразуем URL для asyncpg
-        if database_url.startswith("postgresql://"):
-            database_url = database_url.replace(
-                "postgresql://", "postgresql+asyncpg://"
-            )
-        elif database_url.startswith("sqlite://"):
+        # Преобразуем URL для asyncpg (но у нас только SQLite)
+        if database_url.startswith("sqlite://"):
             database_url = database_url.replace("sqlite://", "sqlite+aiosqlite://")
 
         self.engine = create_async_engine(database_url, echo=False)
@@ -88,7 +94,8 @@ class Database:
         async with self.engine.begin() as conn:
             await conn.run_sync(Base.metadata.create_all)
 
-    # Методы для работы с шаблонами
+    # ========== МЕТОДЫ ДЛЯ ШАБЛОНОВ (как в оригинале) ==========
+
     async def create_template(
         self,
         name: str,
@@ -115,8 +122,6 @@ class Database:
     async def get_templates(self) -> List[Template]:
         """Получение всех шаблонов"""
         async with self.async_session() as session:
-            from sqlalchemy import select
-
             result = await session.execute(
                 select(Template).order_by(Template.created_at.desc())
             )
@@ -145,7 +150,8 @@ class Database:
                 return True
             return False
 
-    # Методы для работы с группами чатов
+    # ========== МЕТОДЫ ДЛЯ ГРУПП ЧАТОВ (как в оригинале) ==========
+
     async def create_chat_group(self, name: str, chat_ids: List[int]) -> ChatGroup:
         """Создание новой группы чатов"""
         async with self.async_session() as session:
@@ -164,8 +170,6 @@ class Database:
     async def get_chat_groups(self) -> List[ChatGroup]:
         """Получение всех групп"""
         async with self.async_session() as session:
-            from sqlalchemy import select
-
             result = await session.execute(
                 select(ChatGroup).order_by(ChatGroup.created_at.desc())
             )
@@ -174,8 +178,6 @@ class Database:
     async def get_chat_groups_by_ids(self, group_ids: List[int]) -> List[ChatGroup]:
         """Получение групп по списку ID"""
         async with self.async_session() as session:
-            from sqlalchemy import select
-
             result = await session.execute(
                 select(ChatGroup).where(ChatGroup.id.in_(group_ids))
             )
@@ -204,7 +206,8 @@ class Database:
                 return True
             return False
 
-    # Методы для работы с рассылками
+    # ========== МЕТОДЫ ДЛЯ РАССЫЛОК (как в оригинале) ==========
+
     async def create_mailing(
         self, template_id: int, group_ids: List[int], total_chats: int
     ) -> Mailing:
@@ -239,8 +242,6 @@ class Database:
     async def get_mailings_history(self, limit: int = 50) -> List[Mailing]:
         """Получение истории рассылок"""
         async with self.async_session() as session:
-            from sqlalchemy import select
-
             result = await session.execute(
                 select(Mailing).order_by(Mailing.created_at.desc()).limit(limit)
             )

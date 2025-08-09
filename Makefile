@@ -1,15 +1,15 @@
-# Makefile для Telegram Price Bot
+# Makefile для Telegram Price Bot с Poetry
 
 .PHONY: help install install-dev test test-unit test-integration test-coverage lint format clean run setup check-env db-init
 
 # Переменные
 PYTHON := python3
-PIP := $(PYTHON) -m pip
-PYTEST := $(PYTHON) -m pytest
-BLACK := $(PYTHON) -m black
-ISORT := $(PYTHON) -m isort
-FLAKE8 := $(PYTHON) -m flake8
-MYPY := $(PYTHON) -m mypy
+POETRY := poetry
+PYTEST := $(POETRY) run pytest
+BLACK := $(POETRY) run black
+ISORT := $(POETRY) run isort
+FLAKE8 := $(POETRY) run flake8
+MYPY := $(POETRY) run mypy
 
 # Цвета для вывода
 RED := \033[0;31m
@@ -22,9 +22,10 @@ help:
 	@echo "$(GREEN)Telegram Price Bot - Команды Make$(NC)"
 	@echo ""
 	@echo "$(YELLOW)Установка:$(NC)"
-	@echo "  make install        - Установить основные зависимости"
+	@echo "  make install        - Установить зависимости через Poetry"
 	@echo "  make install-dev    - Установить зависимости для разработки"
 	@echo "  make setup          - Полная настройка проекта"
+	@echo "  make update         - Обновить зависимости"
 	@echo ""
 	@echo "$(YELLOW)Тестирование:$(NC)"
 	@echo "  make test           - Запустить все тесты"
@@ -37,39 +38,47 @@ help:
 	@echo "  make lint           - Проверить код линтерами"
 	@echo "  make format         - Отформатировать код"
 	@echo "  make check          - Полная проверка кода"
+	@echo "  make type-check     - Проверка типов"
 	@echo ""
 	@echo "$(YELLOW)База данных:$(NC)"
 	@echo "  make db-init        - Инициализировать базу данных"
+	@echo "  make db-reset       - Сбросить базу данных"
 	@echo "  make db-migrate     - Создать миграции"
-	@echo "  make db-upgrade     - Применить миграции"
 	@echo ""
 	@echo "$(YELLOW)Запуск:$(NC)"
 	@echo "  make run            - Запустить бота"
 	@echo "  make run-dev        - Запустить в режиме разработки"
-	@echo "  make run-test       - Запустить тестовый прогон"
 	@echo ""
 	@echo "$(YELLOW)Утилиты:$(NC)"
 	@echo "  make clean          - Очистить временные файлы"
 	@echo "  make check-env      - Проверить переменные окружения"
-	@echo "  make docs           - Сгенерировать документацию"
+	@echo "  make shell          - Запустить Poetry shell"
+
+# Проверка установки Poetry
+check-poetry:
+	@which poetry > /dev/null || (echo "$(RED)Poetry не установлен. Установите: curl -sSL https://install.python-poetry.org | python3 -$(NC)" && exit 1)
 
 # Установка зависимостей
-install:
-	@echo "$(GREEN)Установка основных зависимостей...$(NC)"
-	$(PIP) install --upgrade pip
-	$(PIP) install -r requirements.txt
+install: check-poetry
+	@echo "$(GREEN)Установка зависимостей через Poetry...$(NC)"
+	$(POETRY) install --no-dev
 	@echo "$(GREEN)✓ Зависимости установлены$(NC)"
 
-install-dev:
+install-dev: check-poetry
 	@echo "$(GREEN)Установка зависимостей для разработки...$(NC)"
-	$(PIP) install --upgrade pip
-	$(PIP) install -r requirements-dev.txt
+	$(POETRY) install
 	@echo "$(GREEN)✓ Зависимости для разработки установлены$(NC)"
 
+# Обновление зависимостей
+update: check-poetry
+	@echo "$(GREEN)Обновление зависимостей...$(NC)"
+	$(POETRY) update
+	@echo "$(GREEN)✓ Зависимости обновлены$(NC)"
+
 # Полная настройка проекта
-setup: install-dev check-env db-init
+setup: install-dev check-env
 	@echo "$(GREEN)Настройка pre-commit хуков...$(NC)"
-	pre-commit install
+	$(POETRY) run pre-commit install
 	@echo "$(GREEN)✓ Проект настроен$(NC)"
 
 # Проверка переменных окружения
@@ -81,7 +90,7 @@ check-env:
 		echo "$(RED)⚠ Заполните .env файл вашими данными!$(NC)"; \
 		exit 1; \
 	fi
-	@$(PYTHON) -c "from config import Config; c = Config(); print('✓ Конфигурация корректна')"
+	@$(POETRY) run python -c "from src.core.config import Config; c = Config(); print('✓ Конфигурация корректна')"
 
 # Тестирование
 test:
@@ -90,50 +99,53 @@ test:
 
 test-unit:
 	@echo "$(GREEN)Запуск unit-тестов...$(NC)"
-	$(PYTEST) tests/ -v -m unit
+	$(PYTEST) tests/unit/ -v
 
 test-integration:
 	@echo "$(GREEN)Запуск интеграционных тестов...$(NC)"
-	$(PYTEST) tests/ -v -m integration
+	$(PYTEST) tests/integration/ -v
 
 test-coverage:
 	@echo "$(GREEN)Запуск тестов с покрытием...$(NC)"
-	$(PYTEST) tests/ --cov=. --cov-report=term-missing --cov-report=html
+	$(PYTEST) tests/ --cov=src --cov-report=html --cov-report=term-missing
 	@echo "$(GREEN)✓ Отчет о покрытии: htmlcov/index.html$(NC)"
 
 test-watch:
 	@echo "$(GREEN)Запуск тестов в режиме наблюдения...$(NC)"
-	$(PYTHON) -m pytest_watch tests/ -v
+	$(POETRY) run ptw tests/ -- -v
 
 test-specific:
 	@echo "$(GREEN)Запуск специфичного теста...$(NC)"
-	$(PYTEST) tests/test_bot.py::$(TEST) -v -s
+	$(PYTEST) tests/ -v -k "$(TEST)"
 
 # Качество кода
 lint:
 	@echo "$(GREEN)Проверка кода линтерами...$(NC)"
 	@echo "Проверка flake8..."
-	$(FLAKE8) . --count --select=E9,F63,F7,F82 --show-source --statistics
-	$(FLAKE8) . --count --exit-zero --max-complexity=10 --max-line-length=120 --statistics
-	@echo "Проверка типов mypy..."
-	$(MYPY) bot.py database.py config.py menu_system.py --ignore-missing-imports
+	$(FLAKE8) src tests --max-line-length=88 --extend-ignore=E203,W503
 	@echo "$(GREEN)✓ Проверка завершена$(NC)"
 
 format:
 	@echo "$(GREEN)Форматирование кода...$(NC)"
-	$(BLACK) .
-	$(ISORT) .
+	$(BLACK) src tests
+	$(ISORT) src tests
 	@echo "$(GREEN)✓ Код отформатирован$(NC)"
 
-check: lint test
+type-check:
+	@echo "$(GREEN)Проверка типов...$(NC)"
+	$(MYPY) src --ignore-missing-imports
+	@echo "$(GREEN)✓ Проверка типов завершена$(NC)"
+
+check: format lint type-check test
 	@echo "$(GREEN)✓ Все проверки пройдены$(NC)"
 
 # База данных
 db-init:
 	@echo "$(GREEN)Инициализация базы данных...$(NC)"
-	$(PYTHON) -c "import asyncio; from database import Database; from config import Config; \
+	$(POETRY) run python -c "import asyncio; from src.core.config import Config; from src.database.session import Database; \
 		async def init(): \
-			db = Database(Config().database_url); \
+			config = Config(); \
+			db = Database(config.database.url); \
 			await db.init_db(); \
 			print('✓ База данных инициализирована'); \
 		asyncio.run(init())"
@@ -141,26 +153,25 @@ db-init:
 db-reset:
 	@echo "$(YELLOW)Сброс базы данных...$(NC)"
 	rm -f bot_database.db
-	make db-init
+	$(MAKE) db-init
+
+db-migrate:
+	@echo "$(GREEN)Создание миграций...$(NC)"
+	$(POETRY) run python scripts/migrate.py
 
 # Запуск
 run:
 	@echo "$(GREEN)Запуск бота...$(NC)"
-	$(PYTHON) bot.py
+	$(POETRY) run python src/main.py
 
 run-dev:
-	@echo "$(GREEN)Запуск в режиме разработки с автоперезагрузкой...$(NC)"
-	watchmedo auto-restart -d . -p "*.py" -R -- $(PYTHON) bot.py
+	@echo "$(GREEN)Запуск в режиме разработки...$(NC)"
+	$(POETRY) run watchdog -p "src/*.py" -R -- python src/main.py
 
-run-test:
-	@echo "$(GREEN)Запуск тестового прогона...$(NC)"
-	$(PYTHON) test_bot.py
-
-# Документация
-docs:
-	@echo "$(GREEN)Генерация документации...$(NC)"
-	cd docs && $(PYTHON) -m sphinx . _build/html
-	@echo "$(GREEN)✓ Документация: docs/_build/html/index.html$(NC)"
+# Poetry shell
+shell:
+	@echo "$(GREEN)Запуск Poetry shell...$(NC)"
+	$(POETRY) shell
 
 # Очистка
 clean:
@@ -175,9 +186,10 @@ clean:
 	find . -type d -name ".pytest_cache" -exec rm -rf {} + 2>/dev/null || true
 	find . -type d -name ".mypy_cache" -exec rm -rf {} + 2>/dev/null || true
 	find . -type f -name ".DS_Store" -delete 2>/dev/null || true
+	rm -rf dist/ build/ *.egg-info/
 	@echo "$(GREEN)✓ Очистка завершена$(NC)"
 
-# Docker команды (если понадобится в будущем)
+# Docker команды
 docker-build:
 	@echo "$(GREEN)Сборка Docker образа...$(NC)"
 	docker build -t telegram-price-bot .
@@ -186,11 +198,22 @@ docker-run:
 	@echo "$(GREEN)Запуск в Docker...$(NC)"
 	docker run --env-file .env telegram-price-bot
 
-# Деплой
-deploy-check:
-	@echo "$(GREEN)Проверка готовности к деплою...$(NC)"
-	make check
-	@echo "$(GREEN)✓ Готово к деплою$(NC)"
+# Poetry команды
+poetry-lock:
+	@echo "$(GREEN)Обновление poetry.lock...$(NC)"
+	$(POETRY) lock
+
+poetry-export:
+	@echo "$(GREEN)Экспорт зависимостей...$(NC)"
+	$(POETRY) export -f requirements.txt --output requirements.txt
+	$(POETRY) export -f requirements.txt --dev --output requirements-dev.txt
+
+# Проверка безопасности
+security:
+	@echo "$(GREEN)Проверка безопасности зависимостей...$(NC)"
+	$(POETRY) run safety check
+	$(POETRY) run bandit -r src/
+	@echo "$(GREEN)✓ Проверка безопасности завершена$(NC)"
 
 # Бэкап
 backup:
@@ -198,8 +221,8 @@ backup:
 	mkdir -p backups
 	cp bot_database.db backups/bot_database_$(shell date +%Y%m%d_%H%M%S).db 2>/dev/null || true
 	tar -czf backups/backup_$(shell date +%Y%m%d_%H%M%S).tar.gz \
-		--exclude=venv --exclude=__pycache__ --exclude=.git \
-		--exclude=htmlcov --exclude=.pytest_cache \
+		--exclude=.git --exclude=__pycache__ --exclude=.pytest_cache \
+		--exclude=htmlcov --exclude=.venv --exclude=dist --exclude=build \
 		.
 	@echo "$(GREEN)✓ Резервная копия создана в backups/$(NC)"
 
@@ -207,26 +230,32 @@ backup:
 stats:
 	@echo "$(GREEN)Статистика проекта:$(NC)"
 	@echo "Строк кода Python:"
-	@find . -name "*.py" -not -path "./venv/*" -not -path "./.venv/*" | xargs wc -l | tail -1
+	@find src -name "*.py" | xargs wc -l | tail -1
 	@echo ""
 	@echo "Количество тестов:"
-	@$(PYTEST) --collect-only -q 2>/dev/null | tail -1
+	@$(PYTEST) --collect-only -q 2>/dev/null | tail -1 || echo "Нет тестов"
 	@echo ""
 	@echo "Файлы проекта:"
-	@find . -name "*.py" -not -path "./venv/*" -not -path "./.venv/*" | wc -l
+	@find src -name "*.py" | wc -l
+
+# Документация
+docs:
+	@echo "$(GREEN)Генерация документации...$(NC)"
+	$(POETRY) run sphinx-build -b html docs docs/_build/html
+	@echo "$(GREEN)✓ Документация: docs/_build/html/index.html$(NC)"
 
 # Установка хуков git
 install-hooks:
 	@echo "$(GREEN)Установка Git хуков...$(NC)"
-	pre-commit install
-	pre-commit install --hook-type commit-msg
+	$(POETRY) run pre-commit install
+	$(POETRY) run pre-commit install --hook-type commit-msg
 	@echo "$(GREEN)✓ Git хуки установлены$(NC)"
 
-# Проверка безопасности
-security:
-	@echo "$(GREEN)Проверка безопасности зависимостей...$(NC)"
-	$(PIP) install safety
-	safety check
-	@echo "$(GREEN)✓ Проверка безопасности завершена$(NC)"
+# Проверка готовности к релизу
+release-check:
+	@echo "$(GREEN)Проверка готовности к релизу...$(NC)"
+	$(MAKE) check
+	$(MAKE) security
+	@echo "$(GREEN)✓ Готово к релизу$(NC)"
 
 .DEFAULT_GOAL := help

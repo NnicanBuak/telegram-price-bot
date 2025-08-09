@@ -309,7 +309,7 @@ class TestBotHandlers:
         menu_manager = MenuManager(admin_ids=[123456789])
 
         # Симулируем вызов команды /start
-        from bot import cmd_start
+        from src.main import cmd_start
 
         await cmd_start(mock_message, menu_manager)
 
@@ -469,7 +469,7 @@ class TestIntegration:
 @pytest.mark.asyncio
 async def test_bot_lifecycle():
     """Тест жизненного цикла бота"""
-    from bot import bot, dp, db
+    from src.main import bot, dp, db
 
     # Инициализация БД
     await db.init_db()

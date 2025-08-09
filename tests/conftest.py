@@ -1,5 +1,6 @@
 """
 Общие фикстуры и конфигурация для тестов
+Обновлено для новой структуры проекта
 """
 
 import pytest
@@ -10,13 +11,12 @@ from pathlib import Path
 from unittest.mock import MagicMock, AsyncMock
 from datetime import datetime
 
-# Добавляем корневую директорию в path
-sys.path.insert(0, str(Path(__file__).parent.parent))
+# Добавляем src в path для импортов
+sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
 # Устанавливаем тестовые переменные окружения до импорта модулей
 os.environ["BOT_TOKEN"] = "test:token:for:testing"
 os.environ["ADMIN_IDS"] = "123456789,987654321"
-os.environ["DB_TYPE"] = "sqlite"
 os.environ["DB_PATH"] = ":memory:"
 os.environ["LOG_LEVEL"] = "DEBUG"
 

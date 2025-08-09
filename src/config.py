@@ -1,5 +1,6 @@
 """
-Конфигурация приложения
+Упрощенная конфигурация приложения
+Только SQLite, сохраняем совместимость с оригинальным кодом
 """
 
 import os
@@ -11,7 +12,7 @@ load_dotenv()
 
 
 class Config:
-    """Класс конфигурации"""
+    """Упрощенный класс конфигурации"""
 
     def __init__(self):
         # Telegram Bot
@@ -27,24 +28,9 @@ class Config:
         if not self.admin_ids:
             raise ValueError("ADMIN_IDS не установлен в .env файле")
 
-        # База данных
-        db_type = os.getenv("DB_TYPE", "sqlite").lower()
-
-        if db_type == "postgresql":
-            # PostgreSQL
-            db_user = os.getenv("DB_USER", "postgres")
-            db_password = os.getenv("DB_PASSWORD", "")
-            db_host = os.getenv("DB_HOST", "localhost")
-            db_port = os.getenv("DB_PORT", "5432")
-            db_name = os.getenv("DB_NAME", "telegram_price_bot")
-
-            self.database_url = (
-                f"postgresql://{db_user}:{db_password}@{db_host}:{db_port}/{db_name}"
-            )
-        else:
-            # SQLite (по умолчанию для простоты)
-            db_path = os.getenv("DB_PATH", "bot_database.db")
-            self.database_url = f"sqlite:///{db_path}"
+        # База данных (только SQLite)
+        db_path = os.getenv("DB_PATH", "bot_database.db")
+        self.database_url = f"sqlite:///{db_path}"
 
         # Логирование
         self.log_level = os.getenv("LOG_LEVEL", "INFO")
@@ -62,6 +48,6 @@ class Config:
         return f"""
         Bot Token: {'*' * 10}{self.bot_token[-5:] if self.bot_token else 'NOT SET'}
         Admin IDs: {self.admin_ids}
-        Database: {self.database_url.split('://')[0]}
+        Database: SQLite ({self.database_url.split('///')[-1]})
         Log Level: {self.log_level}
         """
