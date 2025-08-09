@@ -1,6 +1,6 @@
 """
 Общие фикстуры и конфигурация для тестов
-Обновлено для новой структуры проекта
+Минимальная настройка - Config сам определит что использовать
 """
 
 import pytest
@@ -12,21 +12,25 @@ from unittest.mock import MagicMock, AsyncMock
 from datetime import datetime
 
 # Добавляем src в path для импортов
-sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
+project_root = Path(__file__).parent.parent
+src_path = project_root / "src"
+sys.path.insert(0, str(project_root))
+sys.path.insert(0, str(src_path))
 
-# Устанавливаем тестовые переменные окружения до импорта модулей
-os.environ["BOT_TOKEN"] = "test:token:for:testing"
-os.environ["ADMIN_IDS"] = "123456789,987654321"
-os.environ["DB_PATH"] = ":memory:"
-os.environ["LOG_LEVEL"] = "DEBUG"
+# Минимальная настройка для тестов
+os.environ["ENVIRONMENT"] = "testing"
 
-from aiogram import Bot, Dispatcher, types
-from aiogram.fsm.storage.memory import MemoryStorage
+# Если нет TEST_ переменных, создаем их для тестов
+if not os.getenv("TEST_BOT_TOKEN") and not os.getenv("BOT_TOKEN"):
+    os.environ["TEST_BOT_TOKEN"] = "1234567890:AABBCCDDEEFFGGHHIIJJKKLLMMNNOOPP-TEST"
 
-from config import Config
-from database import Database
-from menu_system import MenuManager
+if not os.getenv("TEST_ADMIN_IDS") and not os.getenv("ADMIN_IDS"):
+    os.environ["TEST_ADMIN_IDS"] = "123456789,987654321"
 
+# Импорты из src/ (Config автоматически выберет TEST_ переменные если они есть)
+from src.config import Config
+from src.database import Database
+from src.menu_system import MenuManager
 
 # Конфигурация pytest
 pytest_plugins = ["pytest_asyncio"]
@@ -34,30 +38,31 @@ pytest_plugins = ["pytest_asyncio"]
 
 @pytest.fixture(scope="session")
 def event_loop():
-    """Создание event loop для всей сессии тестов"""
-    loop = asyncio.get_event_loop_policy().new_event_loop()
+    """Event loop для тестов"""
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
     yield loop
     loop.close()
 
 
 @pytest.fixture(scope="function")
 async def test_config():
-    """Фикстура для тестовой конфигурации"""
-    return Config()
+    """Тестовая конфигурация"""
+    config = Config()
+    return config
 
 
 @pytest.fixture(scope="function")
 async def test_db():
-    """Фикстура для тестовой базы данных"""
+    """Тестовая база данных"""
     db = Database("sqlite+aiosqlite:///:memory:")
     await db.init_db()
     yield db
-    # Очистка происходит автоматически для in-memory БД
 
 
 @pytest.fixture(scope="function")
 async def populated_db():
-    """Фикстура с предзаполненной базой данных"""
+    """БД с тестовыми данными"""
     db = Database("sqlite+aiosqlite:///:memory:")
     await db.init_db()
 
@@ -103,14 +108,19 @@ async def populated_db():
 
 @pytest.fixture(scope="function")
 def menu_manager():
-    """Фикстура для менеджера меню"""
-    return MenuManager(admin_ids=[123456789, 987654321])
+    """Менеджер меню для тестов"""
+    config = Config()
+    return MenuManager(admin_ids=config.admin_ids)
 
 
 @pytest.fixture(scope="function")
 def mock_bot():
     """Мок Telegram бота"""
+    from aiogram import Bot
+
     bot = MagicMock(spec=Bot)
+    bot.session = MagicMock()
+    bot.session.close = AsyncMock()
     bot.send_message = AsyncMock()
     bot.send_photo = AsyncMock()
     bot.send_document = AsyncMock()
@@ -125,24 +135,21 @@ def mock_bot():
 
 
 @pytest.fixture(scope="function")
-def mock_dispatcher():
-    """Мок диспетчера"""
-    storage = MemoryStorage()
-    dp = Dispatcher(storage=storage)
-    return dp
-
-
-@pytest.fixture(scope="function")
 def mock_message():
     """Мок сообщения от администратора"""
+    from aiogram import types
+
+    config = Config()
+    admin_id = config.admin_ids[0] if config.admin_ids else 123456789
+
     message = MagicMock(spec=types.Message)
     message.message_id = 1
     message.date = datetime.now()
     message.chat = MagicMock()
-    message.chat.id = 123456789
+    message.chat.id = admin_id
     message.chat.type = "private"
     message.from_user = MagicMock()
-    message.from_user.id = 123456789
+    message.from_user.id = admin_id
     message.from_user.is_bot = False
     message.from_user.first_name = "Test"
     message.from_user.username = "test_user"
@@ -154,39 +161,23 @@ def mock_message():
 
 
 @pytest.fixture(scope="function")
-def mock_message_user():
-    """Мок сообщения от обычного пользователя"""
-    message = MagicMock(spec=types.Message)
-    message.message_id = 2
-    message.date = datetime.now()
-    message.chat = MagicMock()
-    message.chat.id = 111111111
-    message.chat.type = "private"
-    message.from_user = MagicMock()
-    message.from_user.id = 111111111  # Не админ
-    message.from_user.is_bot = False
-    message.from_user.first_name = "User"
-    message.from_user.username = "regular_user"
-    message.text = "/start"
-    message.answer = AsyncMock()
-    message.reply = AsyncMock()
-    message.delete = AsyncMock()
-    return message
-
-
-@pytest.fixture(scope="function")
 def mock_callback_query():
     """Мок callback query от администратора"""
+    from aiogram import types
+
+    config = Config()
+    admin_id = config.admin_ids[0] if config.admin_ids else 123456789
+
     callback = MagicMock(spec=types.CallbackQuery)
     callback.id = "test_callback_id"
     callback.from_user = MagicMock()
-    callback.from_user.id = 123456789
+    callback.from_user.id = admin_id
     callback.from_user.is_bot = False
     callback.from_user.first_name = "Test"
     callback.message = MagicMock()
     callback.message.message_id = 1
     callback.message.chat = MagicMock()
-    callback.message.chat.id = 123456789
+    callback.message.chat.id = admin_id
     callback.message.edit_text = AsyncMock()
     callback.message.edit_reply_markup = AsyncMock()
     callback.message.delete = AsyncMock()
@@ -195,128 +186,34 @@ def mock_callback_query():
     return callback
 
 
-@pytest.fixture(scope="function")
-def mock_state():
-    """Мок FSM состояния"""
-    from aiogram.fsm.context import FSMContext
-    from aiogram.fsm.storage.base import StorageKey
-
-    storage = MemoryStorage()
-    state = FSMContext(
-        storage=storage,
-        key=StorageKey(bot_id=123456789, chat_id=123456789, user_id=123456789),
-    )
-    return state
-
-
-@pytest.fixture(scope="function")
-def sample_templates():
-    """Примеры шаблонов для тестов"""
-    return [
-        {
-            "name": "Прайс-лист основной",
-            "text": "<b>📋 Основной прайс-лист</b>\n\n✅ Товар 1 - 1000₽\n✅ Товар 2 - 2000₽",
-            "file_id": None,
-            "file_type": None,
-        },
-        {
-            "name": "Акция недели",
-            "text": "<b>🎉 Акция недели!</b>\n\nСкидки до 50% на все товары!",
-            "file_id": "document_123",
-            "file_type": "document",
-        },
-        {
-            "name": "VIP предложение",
-            "text": "<b>⭐ VIP предложение</b>\n\nЭксклюзивные условия для постоянных клиентов",
-            "file_id": "photo_456",
-            "file_type": "photo",
-        },
-    ]
-
-
-@pytest.fixture(scope="function")
-def sample_chat_groups():
-    """Примеры групп чатов для тестов"""
-    return [
-        {
-            "name": "Москва - Опт",
-            "chat_ids": [-1001111111111, -1002222222222, -1003333333333],
-        },
-        {"name": "Регионы - Розница", "chat_ids": [-1004444444444, -1005555555555]},
-        {"name": "VIP клиенты", "chat_ids": [-1006666666666]},
-    ]
-
-
-@pytest.fixture(autouse=True)
-def reset_singletons():
-    """Сброс синглтонов между тестами"""
-    # Если есть синглтоны, сбрасываем их здесь
-    yield
-
-
-@pytest.fixture
-def capture_logs(caplog):
-    """Фикстура для захвата логов"""
-    import logging
-
-    caplog.set_level(logging.DEBUG)
-    return caplog
-
-
-# Маркеры для параметризованных тестов
+# Маркеры для pytest
 def pytest_configure(config):
     """Регистрация маркеров"""
     config.addinivalue_line("markers", "unit: mark test as a unit test")
     config.addinivalue_line("markers", "integration: mark test as an integration test")
     config.addinivalue_line("markers", "slow: mark test as slow")
     config.addinivalue_line("markers", "database: mark test as requiring database")
-    config.addinivalue_line("markers", "asyncio: mark test as async")
-    config.addinivalue_line("markers", "api: mark test as requiring API")
-    config.addinivalue_line("markers", "menu: mark test as menu system test")
 
 
-# Хуки pytest
 def pytest_collection_modifyitems(config, items):
-    """Модификация собранных тестов"""
+    """Автоматическое добавление маркеров"""
     for item in items:
         # Автоматически добавляем маркер asyncio для async тестов
         if asyncio.iscoroutinefunction(item.function):
             item.add_marker(pytest.mark.asyncio)
 
-        # Добавляем маркеры based на имени файла
+        # Добавляем маркеры на основе имени файла
         if "test_database" in str(item.fspath):
             item.add_marker(pytest.mark.database)
-        elif "test_menu" in str(item.fspath):
-            item.add_marker(pytest.mark.menu)
         elif "test_integration" in str(item.fspath):
             item.add_marker(pytest.mark.integration)
         else:
             item.add_marker(pytest.mark.unit)
 
 
-def pytest_runtest_setup(item):
-    """Настройка перед запуском теста"""
-    # Можно добавить логику настройки
-    pass
-
-
-def pytest_runtest_teardown(item):
-    """Очистка после теста"""
-    # Можно добавить логику очистки
-    pass
-
-
 # Вспомогательные функции для тестов
 class TestHelpers:
     """Вспомогательные методы для тестов"""
-
-    @staticmethod
-    async def create_test_mailing(db, template_id, group_ids, total_chats=10):
-        """Создать тестовую рассылку"""
-        mailing = await db.create_mailing(
-            template_id=template_id, group_ids=group_ids, total_chats=total_chats
-        )
-        return mailing
 
     @staticmethod
     def assert_menu_contains(keyboard, expected_text):
@@ -328,20 +225,12 @@ class TestHelpers:
         return False
 
     @staticmethod
-    async def simulate_mailing(db, mailing_id, success_rate=0.9):
-        """Симулировать отправку рассылки"""
-        import random
-
-        mailing = await db.get_mailing(mailing_id)
-        total = mailing.total_chats
-        sent = int(total * success_rate)
-        failed = total - sent
-
-        await db.update_mailing_stats(
-            mailing_id=mailing_id, sent_count=sent, failed_count=failed
+    async def create_test_mailing(db, template_id, group_ids, total_chats=10):
+        """Создать тестовую рассылку"""
+        mailing = await db.create_mailing(
+            template_id=template_id, group_ids=group_ids, total_chats=total_chats
         )
-
-        return sent, failed
+        return mailing
 
 
 # Экспортируем helpers
