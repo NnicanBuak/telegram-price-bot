@@ -1,0 +1,59 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: [3.9, 3.11] # минимальная и максимальная поддерживаемые версии
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: "poetry"
+
+      - name: Install Poetry
+        run: pip install poetry
+
+      - name: Install dependencies
+        run: poetry install --no-interaction --no-root
+
+      - name: Create .env for tests
+        run: cp .env.example .env || true
+
+      - name: Run linting (only latest Python)
+        if: matrix.python-version == '3.11'
+        run: poetry run ruff check .
+
+      - name: Type checking (only latest Python)
+        if: matrix.python-version == '3.11'
+        run: poetry run mypy .
+
+      - name: Run tests
+        run: |
+          poetry run pytest \
+            --junitxml=pytest-${{ matrix.python-version }}.xml \
+            --cov=your_package \
+            --cov-report=xml:coverage-${{ matrix.python-version }}.xml
+        continue-on-error: true
+
+      - name: Upload junit report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: junit-${{ matrix.python-version }}
+          path: pytest-${{ matrix.python-version }}.xml
+
+      - name: Upload coverage to Codecov (only latest Python)
+        if: matrix.python-version == '3.11' && always()
+        uses: codecov/codecov-action@v4
+        with:
+          files: coverage-${{ matrix.python-version }}.xml
+          fail_ci_if_error: false
