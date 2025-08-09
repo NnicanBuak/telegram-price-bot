@@ -13,8 +13,6 @@ classifiers = [
     "Intended Audience :: Developers",
     "License :: OSI Approved :: MIT License",
     "Operating System :: OS Independent",
-    "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.8",
     "Programming Language :: Python :: 3.9",
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
@@ -26,7 +24,7 @@ classifiers = [
 packages = [{include = "src"}]
 
 [tool.poetry.dependencies]
-python = "^3.8"
+python = ">=3.9,<4.0"
 aiogram = "^3.21.0"
 aiohttp = "^3.12.0"
 python-dotenv = "^1.0.0"
@@ -170,7 +168,7 @@ output = "coverage.xml"
 
 # Конфигурация mypy
 [tool.mypy]
-python_version = "3.8"
+python_version = "3.9"
 warn_return_any = true
 warn_unused_configs = true
 disallow_untyped_defs = true
