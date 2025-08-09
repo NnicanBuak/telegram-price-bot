@@ -244,7 +244,7 @@ screen -S price-bot
 # Запуск бота
 cd /path/to/telegram-price-bot
 source venv/bin/activate
-python bot.py
+python run.py
 
 # Отключение от сессии: Ctrl+A, затем D
 # Подключение к сессии: screen -r price-bot
