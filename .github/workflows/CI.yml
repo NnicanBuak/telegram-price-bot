@@ -9,7 +9,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        python-version: [3.9, 3.11] # минимальная и максимальная поддерживаемые версии
+        python-version: [3.9, 3.11, 3.13]
     steps:
       - uses: actions/checkout@v4
 
@@ -29,17 +29,17 @@ jobs:
         run: cp .env.example .env || true
 
       - name: Auto-fix imports and formatting
-        if: matrix.python-version == '3.11'
+        if: matrix.python-version == '3.13'
         run: |
           poetry run ruff check . --fix
           poetry run ruff format .
 
       - name: Run linting (only latest Python)
-        if: matrix.python-version == '3.11'
+        if: matrix.python-version == '3.13'
         run: poetry run ruff check .
 
       - name: Type checking (only latest Python)
-        if: matrix.python-version == '3.11'
+        if: matrix.python-version == '3.13'
         run: poetry run mypy .
 
       - name: Run tests
@@ -58,7 +58,7 @@ jobs:
           path: pytest-${{ matrix.python-version }}.xml
 
       - name: Upload coverage to Codecov (only latest Python)
-        if: matrix.python-version == '3.11' && always()
+        if: matrix.python-version == '3.13' && always()
         uses: codecov/codecov-action@v4
         with:
           files: coverage-${{ matrix.python-version }}.xml
