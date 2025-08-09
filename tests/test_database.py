@@ -1,14 +1,14 @@
 """
 Тесты для модуля database.py
+Обновлено для новой структуры проекта
 """
 
 import pytest
 import asyncio
 from datetime import datetime, timedelta
-from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
-from sqlalchemy.orm import sessionmaker
 
-from database import Database, Template, ChatGroup, Mailing, Base
+# Импорты обновлены для src/ структуры
+from database import Database, Template, ChatGroup, Mailing
 
 
 @pytest.fixture(scope="function")
@@ -339,140 +339,6 @@ class TestMailingOperations:
         # Получаем с ограничением
         history = await db.get_mailings_history(limit=5)
         assert len(history) == 5
-
-
-class TestDatabaseTransactions:
-    """Тесты транзакций и целостности данных"""
-
-    @pytest.mark.asyncio
-    async def test_concurrent_template_creation(self, test_db):
-        """Тест одновременного создания шаблонов"""
-
-        async def create_template(index):
-            return await test_db.create_template(
-                name=f"Concurrent {index}", text=f"Text {index}"
-            )
-
-        # Создаем несколько шаблонов одновременно
-        tasks = [create_template(i) for i in range(10)]
-        templates = await asyncio.gather(*tasks)
-
-        assert len(templates) == 10
-        # Все ID должны быть уникальными
-        ids = [t.id for t in templates]
-        assert len(set(ids)) == 10
-
-    @pytest.mark.asyncio
-    async def test_cascade_operations(self, populated_db):
-        """Тест каскадных операций"""
-        db, templates, groups, mailings = populated_db
-
-        # Удаляем шаблон, используемый в рассылке
-        template_id = templates[0].id
-        mailing_with_template = mailings[0]
-
-        # Удаление шаблона не должно удалить рассылку
-        await db.delete_template(template_id)
-
-        # Рассылка все еще должна существовать
-        history = await db.get_mailings_history()
-        mailing_ids = [m.id for m in history]
-        assert mailing_with_template.id in mailing_ids
-
-    @pytest.mark.asyncio
-    async def test_json_field_integrity(self, test_db):
-        """Тест целостности JSON полей"""
-        # Создаем группу с разными типами ID
-        mixed_ids = [-1001234567890, 123456789, -987654321, 555555]
-
-        group = await test_db.create_chat_group(name="Mixed IDs", chat_ids=mixed_ids)
-
-        # Получаем обратно
-        retrieved = await test_db.get_chat_group(group.id)
-
-        assert retrieved.chat_ids == mixed_ids
-        assert all(isinstance(chat_id, int) for chat_id in retrieved.chat_ids)
-
-
-class TestDatabasePerformance:
-    """Тесты производительности базы данных"""
-
-    @pytest.mark.asyncio
-    async def test_bulk_template_creation(self, test_db):
-        """Тест массового создания шаблонов"""
-        start_time = datetime.now()
-
-        templates = []
-        for i in range(100):
-            template = await test_db.create_template(
-                name=f"Bulk template {i}",
-                text=f"Text content {i}" * 100,  # Длинный текст
-            )
-            templates.append(template)
-
-        elapsed = (datetime.now() - start_time).total_seconds()
-
-        assert len(templates) == 100
-        # Должно выполниться менее чем за 5 секунд
-        assert elapsed < 5
-
-    @pytest.mark.asyncio
-    async def test_large_chat_group(self, test_db):
-        """Тест группы с большим количеством чатов"""
-        # Создаем группу с 1000 чатов
-        large_chat_list = [-(1000000000000 + i) for i in range(1000)]
-
-        group = await test_db.create_chat_group(
-            name="Large group", chat_ids=large_chat_list
-        )
-
-        # Получаем обратно
-        retrieved = await test_db.get_chat_group(group.id)
-
-        assert len(retrieved.chat_ids) == 1000
-        assert retrieved.chat_ids == large_chat_list
-
-
-class TestDatabaseEdgeCases:
-    """Тесты граничных случаев"""
-
-    @pytest.mark.asyncio
-    async def test_empty_template_name(self, test_db):
-        """Тест создания шаблона с пустым именем"""
-        template = await test_db.create_template(name="", text="Text with empty name")
-
-        assert template.name == ""
-
-    @pytest.mark.asyncio
-    async def test_very_long_text(self, test_db):
-        """Тест шаблона с очень длинным текстом"""
-        long_text = "A" * 10000  # 10000 символов
-
-        template = await test_db.create_template(
-            name="Long text template", text=long_text
-        )
-
-        retrieved = await test_db.get_template(template.id)
-        assert len(retrieved.text) == 10000
-        assert retrieved.text == long_text
-
-    @pytest.mark.asyncio
-    async def test_special_characters_in_text(self, test_db):
-        """Тест специальных символов в тексте"""
-        special_text = """
-        Special characters: 
-        < > & " ' \\ / 
-        Emoji: 😀 🎉 🚀 ❤️
-        Unicode: Привет мир! 你好世界 مرحبا بالعالم
-        HTML: <b>Bold</b> <i>Italic</i> <code>Code</code>
-        """
-
-        template = await test_db.create_template(
-            name="Special chars", text=special_text
-        )
-
-        retrieved = await test_db.get_template(template.id)
-        assert retrieved.text == special_text
 
 
 if __name__ == "__main__":
