@@ -1,0 +1,51 @@
+# Зависимости для разработки и тестирования
+
+# Включаем основные зависимости
+-r requirements.txt
+
+# ===== ТЕСТИРОВАНИЕ =====
+pytest==8.3.4
+pytest-asyncio==0.24.0
+pytest-cov==6.0.0
+pytest-timeout==2.3.1
+pytest-mock==3.14.0
+pytest-env==1.1.5
+
+# Моки и фикстуры
+faker==33.1.0
+factory-boy==3.3.1
+responses==0.25.3
+
+# ===== КАЧЕСТВО КОДА =====
+# Линтеры
+flake8==7.1.1
+flake8-docstrings==1.7.0
+flake8-bugbear==24.10.31
+flake8-comprehensions==3.16.0
+pylint==3.3.2
+
+# Форматтеры
+black==24.10.0
+isort==5.13.2
+autopep8==2.3.1
+
+# Типизация
+mypy==1.13.0
+types-python-dateutil==2.9.0
+types-requests==2.32.0
+
+# ===== ОТЛАДКА =====
+ipython==8.31.0
+ipdb==0.13.13
+pdbpp==0.10.3
+
+# ===== ДОКУМЕНТАЦИЯ =====
+sphinx==8.1.3
+sphinx-rtd-theme==3.0.2
+sphinx-autodoc-typehints==2.5.0
+myst-parser==4.0.0
+
+# ===== УТИЛИТЫ =====
+pre-commit==4.0.1
+watchdog==6.0.0
+python-decouple==3.8

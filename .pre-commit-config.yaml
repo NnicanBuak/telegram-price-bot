@@ -1,0 +1,150 @@
+# Конфигурация pre-commit хуков для автоматической проверки кода
+
+repos:
+  # Общие проверки
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.6.0
+    hooks:
+      - id: trailing-whitespace
+        name: Удаление пробелов в конце строк
+      - id: end-of-file-fixer
+        name: Добавление переноса строки в конец файла
+      - id: check-yaml
+        name: Проверка YAML файлов
+      - id: check-json
+        name: Проверка JSON файлов
+      - id: check-toml
+        name: Проверка TOML файлов
+      - id: check-added-large-files
+        name: Предотвращение больших файлов
+        args: ["--maxkb=1000"]
+      - id: check-case-conflict
+        name: Проверка конфликтов имен файлов
+      - id: check-merge-conflict
+        name: Проверка конфликтов слияния
+      - id: detect-private-key
+        name: Обнаружение приватных ключей
+      - id: check-executables-have-shebangs
+        name: Проверка shebang в исполняемых файлах
+      - id: check-docstring-first
+        name: Проверка docstring первой строкой
+
+  # Форматирование кода Python
+  - repo: https://github.com/psf/black
+    rev: 24.10.0
+    hooks:
+      - id: black
+        name: Форматирование кода Black
+        language_version: python3
+        args: ["--line-length=120"]
+
+  # Сортировка импортов
+  - repo: https://github.com/pycqa/isort
+    rev: 5.13.2
+    hooks:
+      - id: isort
+        name: Сортировка импортов
+        args: ["--profile", "black", "--line-length", "120"]
+
+  # Линтинг Python кода
+  - repo: https://github.com/pycqa/flake8
+    rev: 7.1.1
+    hooks:
+      - id: flake8
+        name: Линтинг Flake8
+        args:
+          [
+            "--max-line-length=120",
+            "--ignore=E203,W503,E501",
+            "--exclude=.git,__pycache__,venv,.venv,build,dist",
+          ]
+        additional_dependencies:
+          ["flake8-docstrings", "flake8-bugbear", "flake8-comprehensions"]
+
+  # Проверка типов
+  - repo: https://github.com/pre-commit/mirrors-mypy
+    rev: v1.13.0
+    hooks:
+      - id: mypy
+        name: Проверка типов MyPy
+        args: ["--ignore-missing-imports", "--no-strict-optional"]
+        additional_dependencies:
+          ["types-python-dateutil", "types-requests", "sqlalchemy-stubs"]
+
+  # Проверка безопасности
+  - repo: https://github.com/PyCQA/bandit
+    rev: 1.7.10
+    hooks:
+      - id: bandit
+        name: Проверка безопасности Bandit
+        args: ["-r", ".", "-ll", "-x", "tests/*,venv/*,.venv/*"]
+
+  # Проверка requirements
+  - repo: https://github.com/pycqa/pip-audit
+    rev: v2.7.3
+    hooks:
+      - id: pip-audit
+        name: Аудит зависимостей
+        args: ["--desc"]
+
+  # Проверка Markdown
+  - repo: https://github.com/igorshubovych/markdownlint-cli
+    rev: v0.43.0
+    hooks:
+      - id: markdownlint
+        name: Линтинг Markdown
+        args: ["--fix"]
+
+  # Удаление неиспользуемых импортов
+  - repo: https://github.com/PyCQA/autoflake
+    rev: v2.3.1
+    hooks:
+      - id: autoflake
+        name: Удаление неиспользуемых импортов
+        args:
+          [
+            "--in-place",
+            "--remove-all-unused-imports",
+            "--remove-unused-variables",
+            "--remove-duplicate-keys",
+          ]
+
+  # Проверка SQL запросов
+  - repo: https://github.com/sqlfluff/sqlfluff
+    rev: 3.3.0
+    hooks:
+      - id: sqlfluff-lint
+        name: Линтинг SQL
+        args: ["--dialect", "postgres"]
+
+# Настройки
+default_language_version:
+  python: python3.11
+
+# Исключения
+exclude: |
+  (?x)^(
+    .*\.egg-info/.*|
+    \.git/.*|
+    \.mypy_cache/.*|
+    \.pytest_cache/.*|
+    \.tox/.*|
+    \.venv/.*|
+    venv/.*|
+    build/.*|
+    dist/.*|
+    htmlcov/.*|
+    docs/_build/.*
+  )$
+
+# Запуск хуков при каждом коммите
+fail_fast: false
+
+# CI настройки
+ci:
+  autofix_prs: true
+  autofix_commit_msg: "[pre-commit.ci] auto fixes"
+  autoupdate_commit_msg: "[pre-commit.ci] pre-commit autoupdate"
+  autoupdate_schedule: weekly
+  skip: []
+  submodules: false

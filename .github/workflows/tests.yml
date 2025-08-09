@@ -1,0 +1,193 @@
+name: Tests and Linting
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main]
+  schedule:
+    - cron: "0 0 * * *"
+
+jobs:
+  test:
+    name: Test Python ${{ matrix.python-version }}
+    runs-on: ubuntu-latest
+
+    strategy:
+      matrix:
+        python-version: ["3.8", "3.9", "3.10", "3.11", "3.12", "3.13"]
+
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_USER: test_user
+          POSTGRES_PASSWORD: test_password
+          POSTGRES_DB: test_db
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Cache pip packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-${{ hashFiles('requirements-dev.txt') }}
+          restore-keys: |
+            ${{ runner.os }}-pip-
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements-dev.txt
+
+      - name: Create .env file
+        run: |
+          cat > .env << EOF
+          BOT_TOKEN=test:token
+          ADMIN_IDS=123456789
+          DB_TYPE=postgresql
+          DB_USER=test_user
+          DB_PASSWORD=test_password
+          DB_HOST=localhost
+          DB_PORT=5432
+          DB_NAME=test_db
+          EOF
+
+      - name: Run linting
+        run: |
+          # Форматирование
+          black . --check --diff
+          isort . --check-only --diff
+
+          # Линтинг
+          flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics
+          flake8 . --count --exit-zero --max-complexity=10 --max-line-length=120 --statistics
+
+      - name: Type checking
+        run: |
+          mypy bot.py database.py config.py menu_system.py --ignore-missing-imports
+
+      - name: Run tests with coverage
+        run: |
+          pytest tests/ -v --cov=. --cov-report=xml --cov-report=term-missing
+
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v4
+        with:
+          file: ./coverage.xml
+          flags: unittests
+          name: codecov-umbrella
+          fail_ci_if_error: false
+
+  lint:
+    name: Lint and Security Check
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements-dev.txt
+          pip install safety bandit
+
+      - name: Security check with Bandit
+        run: |
+          bandit -r . -ll -x tests,venv,.venv
+
+      - name: Check dependencies with Safety
+        run: |
+          safety check --json
+        continue-on-error: true
+
+  docker:
+    name: Docker Build Test
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Test Docker build
+        run: |
+          docker build -t telegram-price-bot:test .
+        if: false # Отключено, пока нет Dockerfile
+
+  integration:
+    name: Integration Tests
+    runs-on: ubuntu-latest
+    needs: test
+
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_USER: test_user
+          POSTGRES_PASSWORD: test_password
+          POSTGRES_DB: test_db
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements-dev.txt
+
+      - name: Create .env file
+        run: |
+          cat > .env << EOF
+          BOT_TOKEN=${{ secrets.TEST_BOT_TOKEN || 'test:token' }}
+          ADMIN_IDS=123456789
+          DB_TYPE=postgresql
+          DB_USER=test_user
+          DB_PASSWORD=test_password
+          DB_HOST=localhost
+          DB_PORT=5432
+          DB_NAME=test_db
+          EOF
+
+      - name: Run integration tests
+        run: |
+          pytest tests/ -v -m integration
+
+      - name: Upload coverage reports to Codecov
+        uses: codecov/codecov-action@v5
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          slug: NnicanBuak/telegram-price-bot
+
+      - name: Test bot startup
+        run: |
+          timeout 10s python bot.py || [ $? -eq 124 ]
+        continue-on-error: true
