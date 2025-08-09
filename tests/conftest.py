@@ -1,6 +1,6 @@
 """
 Общие фикстуры и конфигурация для тестов
-Минимальная настройка - Config сам определит что использовать
+Исправленная версия с фикстурами для корректной работы тестов
 """
 
 import pytest
@@ -11,8 +11,8 @@ from pathlib import Path
 from unittest.mock import MagicMock, AsyncMock
 from datetime import datetime
 
-# Добавляем src в path для импортов
-project_root = Path(__file__).parent.parent
+# Добавляем корень проекта и src в path для корректных импортов
+project_root = Path(__file__).parent.parent.absolute()
 src_path = project_root / "src"
 sys.path.insert(0, str(project_root))
 sys.path.insert(0, str(src_path))
@@ -27,10 +27,11 @@ if not os.getenv("TEST_BOT_TOKEN") and not os.getenv("BOT_TOKEN"):
 if not os.getenv("TEST_ADMIN_IDS") and not os.getenv("ADMIN_IDS"):
     os.environ["TEST_ADMIN_IDS"] = "123456789,987654321"
 
-# Импорты из src/ (Config автоматически выберет TEST_ переменные если они есть)
+# Импорты из src
 from src.config import Config
 from src.database import Database
-from src.menu_system import MenuManager
+from src.menu_system import MenuManager, Menu, MenuItem
+from src.bot.menus import setup_bot_menus
 
 # Конфигурация pytest
 pytest_plugins = ["pytest_asyncio"]

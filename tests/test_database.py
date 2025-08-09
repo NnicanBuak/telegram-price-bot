@@ -8,7 +8,7 @@ import asyncio
 from datetime import datetime, timedelta
 
 # Импорты обновлены для src/ структуры
-from database import Database, Template, ChatGroup, Mailing
+from src.database import Database, Template, ChatGroup, Mailing
 
 
 @pytest.fixture(scope="function")

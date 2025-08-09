@@ -12,9 +12,9 @@ from aiogram import Bot, Dispatcher, types
 from aiogram.fsm.storage.memory import MemoryStorage
 from aiogram.fsm.context import FSMContext
 
-from config import Config
-from database import Database
-from menu_system import MenuManager, MenuMiddleware
+from src.config import Config
+from src.database import Database
+from src.menu_system import MenuManager, MenuMiddleware
 
 
 @pytest.fixture

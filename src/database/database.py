@@ -1,6 +1,5 @@
 """
 Упрощенный модуль для работы с SQLite базой данных
-Объединяет models + crud для простоты
 """
 
 from datetime import datetime
