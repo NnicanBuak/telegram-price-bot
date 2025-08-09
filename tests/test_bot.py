@@ -9,8 +9,6 @@ from unittest.mock import Mock, AsyncMock, patch, MagicMock
 from datetime import datetime
 
 # Настройка окружения для тестов
-os.environ["TEST_BOT_TOKEN"] = "1234567890:AABBCCDDEEFFGGHHIIJJKKLLMMNNOOPP-FAKE"
-os.environ["TEST_ADMIN_IDS"] = "123456789,987654321"
 os.environ["DB_PATH"] = ":memory:"
 
 # Исправление пути для импорта
