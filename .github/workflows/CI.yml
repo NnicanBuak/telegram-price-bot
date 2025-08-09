@@ -22,11 +22,6 @@ jobs:
       - name: Install dependencies
         run: poetry install --no-interaction --no-root
 
-      - name: Auto-fix imports and formatting
-        run: |
-          poetry run ruff check . --fix || true
-          poetry run ruff format . || true
-
       - name: Run linting
         run: poetry run ruff check . || true
 
