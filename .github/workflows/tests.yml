@@ -92,9 +92,14 @@ jobs:
 
       - name: Run tests with coverage
         run: |
-          pytest tests/ -v --cov=src --cov-report=xml --cov-report=term-missing --tb=short
-        env:
-          ENVIRONMENT: testing
+          pytest tests/ -v --cov=src --cov-report=xml --cov-report=term-missing \
+            --junitxml=junit.xml --tb=short
+
+      - name: Upload test report
+        uses: actions/upload-artifact@v4
+        with:
+          name: junit-report
+          path: junit.xml
 
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v4

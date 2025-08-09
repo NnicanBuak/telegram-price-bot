@@ -58,6 +58,8 @@ wheels/
 # Testing
 .coverage
 .pytest_cache/
+coverage.xml
+junit.xml
 htmlcov/
 
 # Temporary files
