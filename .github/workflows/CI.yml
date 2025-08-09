@@ -2,8 +2,17 @@ name: CI
 
 on:
   push:
-    branches: [ "**" ]
+    branches: ["**"]
+    paths:
+      - "src/**"
+      - "tests/**"
+      - ".github/workflows/CI.yml"
   pull_request:
+    branches: ["**"]
+    paths:
+      - "src/**"
+      - "tests/**"
+      - ".github/workflows/CI.yml"
 
 jobs:
   test:
@@ -45,8 +54,9 @@ jobs:
       - name: Run tests
         run: |
           poetry run pytest \
-            --junitxml=pytest-${{ matrix.python-version }}.xml \
-            --cov=src \
+          --cov=src \
+          --cov-context=test \
+          --junitxml=pytest-${{ matrix.python-version }}.xml \
             --cov-report=xml:coverage-${{ matrix.python-version }}.xml
 
       - name: Upload coverage + junit to Codecov
@@ -59,4 +69,3 @@ jobs:
           flags: unittests
           name: python-${{ matrix.python-version }}
           fail_ci_if_error: false
-

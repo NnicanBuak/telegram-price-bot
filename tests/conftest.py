@@ -38,12 +38,8 @@ pytest_plugins = ["pytest_asyncio"]
 
 
 @pytest.fixture(scope="session")
-def event_loop():
-    """Event loop для тестов"""
-    loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(loop)
-    yield loop
-    loop.close()
+def event_loop_policy():
+    return asyncio.DefaultEventLoopPolicy()
 
 
 @pytest.fixture(scope="function")

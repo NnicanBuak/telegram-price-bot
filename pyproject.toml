@@ -103,11 +103,6 @@ addopts = [
     "-ra",
     "--strict-markers", 
     "--strict-config",
-    "--cov=src",
-    "--cov-report=term-missing",
-    "--cov-report=html",
-    "--cov-report=xml",
-    "--cov-config=pyproject.toml",
 ]
 markers = [
     "unit: Unit tests",
@@ -117,6 +112,7 @@ markers = [
     "database: Database tests",
     "api: API tests",
     "menu: Menu system tests",
+    "e2e: End-to-end tests",
 ]
 asyncio_mode = "auto"
 timeout = 30
@@ -127,6 +123,7 @@ log_cli_date_format = "%Y-%m-%d %H:%M:%S"
 
 # Конфигурация coverage
 [tool.coverage.run]
+branch = true
 source = ["src"]
 omit = [
     "*/tests/*",
