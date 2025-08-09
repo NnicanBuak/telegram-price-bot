@@ -28,6 +28,12 @@ jobs:
       - name: Create .env for tests
         run: cp .env.example .env || true
 
+      - name: Auto-fix imports and formatting
+        if: matrix.python-version == '3.11'
+        run: |
+          poetry run ruff check . --fix
+          poetry run ruff format .
+
       - name: Run linting (only latest Python)
         if: matrix.python-version == '3.11'
         run: poetry run ruff check .

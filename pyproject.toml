@@ -49,6 +49,7 @@ bandit = "^1.7.0"
 safety = "^3.0.0"
 faker = "^33.0.0"
 factory-boy = "^3.0.0"
+ruff = "^0.12.8"
 
 [tool.poetry.group.docs.dependencies]
 sphinx = "^7.0.0"
