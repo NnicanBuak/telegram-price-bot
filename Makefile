@@ -146,7 +146,7 @@ db-init:
 		async def init(): \
 			config = Config(); \
 			db = Database(config.database.url); \
-			await db.init_db(); \
+			await db.init_database(); \
 			print('✓ База данных инициализирована'); \
 		asyncio.run(init())"
 

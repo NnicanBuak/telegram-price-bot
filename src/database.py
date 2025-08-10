@@ -1,5 +1,6 @@
 from datetime import datetime, timedelta
-from typing import List, Optional
+from typing import List, Optional, AsyncGenerator
+from contextlib import asynccontextmanager
 from sqlalchemy import (
     create_engine,
     Column,
@@ -16,12 +17,17 @@ from sqlalchemy import (
 )
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker, Session
-from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
+from sqlalchemy.ext.asyncio import (
+    create_async_engine,
+    AsyncSession,
+    async_sessionmaker,
+    AsyncEngine,
+)
 
 Base = declarative_base()
 
 
-# ========== МОДЕЛИ (как в оригинале) ==========
+# ========== МОДЕЛИ ==========
 
 
 class Template(Base):
@@ -34,7 +40,7 @@ class Template(Base):
     text = Column(Text, nullable=False)
     file_id = Column(String(255), nullable=True)
     file_type = Column(String(50), nullable=True)  # 'photo' или 'document'
-    file_path = Column(String(500), nullable=True)  # Добавлено для тестов
+    file_path = Column(String(500), nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
@@ -69,34 +75,89 @@ class Mailing(Base):
     completed_at = Column(DateTime, nullable=True)
 
 
-# ========== КЛАСС БАЗЫ ДАННЫХ (расширенный) ==========
+# ========== ОСНОВНОЙ КЛАСС БАЗЫ ДАННЫХ ==========
 
 
 class Database:
     """Класс для работы с SQLite базой данных"""
 
-    def __init__(self, database_url: str = "sqlite+aiosqlite:///bot_database.db"):
+    def __init__(
+        self,
+        database_url: str = "sqlite+aiosqlite:///bot_database.db",
+        echo: bool = False,
+    ):
+        """
+        Инициализация SQLite базы данных
+
+        Args:
+            database_url: URL для подключения к SQLite БД
+            echo: Логирование SQL запросов
+        """
         self.database_url = database_url
-        self.engine = None
-        self.async_session = None
 
-    async def init_db(self):
-        """Инициализация базы данных"""
-        self.engine = create_async_engine(self.database_url, echo=False, future=True)
+        # Настройки для SQLite
+        self.engine: AsyncEngine = create_async_engine(
+            database_url,
+            echo=echo,
+            connect_args={"check_same_thread": False},
+            pool_pre_ping=True,
+            future=True,
+        )
 
-        # Создаем таблицы
+        self.async_session = async_sessionmaker(
+            self.engine,
+            class_=AsyncSession,
+            expire_on_commit=False,
+            autoflush=True,
+            autocommit=False,
+        )
+
+    async def init_database(self) -> None:
+        """Инициализация базы данных - создание таблиц"""
         async with self.engine.begin() as conn:
             await conn.run_sync(Base.metadata.create_all)
 
-        # Создаем фабрику сессий
-        self.async_session = async_sessionmaker(
-            self.engine, class_=AsyncSession, expire_on_commit=False
-        )
+    async def drop_database(self) -> None:
+        """Удаление всех таблиц"""
+        async with self.engine.begin() as conn:
+            await conn.run_sync(Base.metadata.drop_all)
 
-    async def close(self):
+    async def close(self) -> None:
         """Закрытие соединения с БД"""
         if self.engine:
             await self.engine.dispose()
+
+    @asynccontextmanager
+    async def get_session(self) -> AsyncGenerator[AsyncSession, None]:
+        """
+        Контекстный менеджер для получения сессии БД
+
+        Yields:
+            AsyncSession: Сессия базы данных
+        """
+        async with self.async_session() as session:
+            try:
+                yield session
+                await session.commit()
+            except Exception:
+                await session.rollback()
+                raise
+            finally:
+                await session.close()
+
+    async def health_check(self) -> bool:
+        """
+        Проверка состояния базы данных
+
+        Returns:
+            bool: True если БД доступна
+        """
+        try:
+            async with self.get_session() as session:
+                await session.execute(select(1))
+                return True
+        except Exception:
+            return False
 
     # ========== МЕТОДЫ ДЛЯ ШАБЛОНОВ ==========
 
@@ -106,10 +167,10 @@ class Database:
         text: str,
         file_id: str = None,
         file_type: str = None,
-        file_path: str = None,  # Добавлено для совместимости с тестами
+        file_path: str = None,
     ) -> Template:
         """Создать новый шаблон"""
-        async with self.async_session() as session:
+        async with self.get_session() as session:
             template = Template(
                 name=name,
                 text=text,
@@ -118,19 +179,19 @@ class Database:
                 file_path=file_path,
             )
             session.add(template)
-            await session.commit()
+            await session.flush()  # Получаем ID до коммита
             await session.refresh(template)
             return template
 
     async def get_templates(self) -> List[Template]:
         """Получить все шаблоны"""
-        async with self.async_session() as session:
+        async with self.get_session() as session:
             result = await session.execute(select(Template).order_by(Template.id))
-            return result.scalars().all()
+            return list(result.scalars().all())
 
     async def get_template(self, template_id: int) -> Optional[Template]:
         """Получить шаблон по ID"""
-        async with self.async_session() as session:
+        async with self.get_session() as session:
             result = await session.execute(
                 select(Template).where(Template.id == template_id)
             )
@@ -145,7 +206,7 @@ class Database:
         file_type: str = None,
     ) -> Optional[Template]:
         """Обновить шаблон"""
-        async with self.async_session() as session:
+        async with self.get_session() as session:
             template = await session.get(Template, template_id)
             if not template:
                 return None
@@ -160,44 +221,43 @@ class Database:
                 template.file_type = file_type
 
             template.updated_at = datetime.utcnow()
-            await session.commit()
+            await session.flush()
             await session.refresh(template)
             return template
 
     async def delete_template(self, template_id: int) -> bool:
         """Удалить шаблон"""
-        async with self.async_session() as session:
+        async with self.get_session() as session:
             template = await session.get(Template, template_id)
             if not template:
                 return False
 
             await session.delete(template)
-            await session.commit()
             return True
 
     # ========== МЕТОДЫ ДЛЯ ГРУПП ЧАТОВ ==========
 
     async def create_chat_group(self, name: str, chat_ids: List[int]) -> ChatGroup:
         """Создать новую группу чатов"""
-        async with self.async_session() as session:
+        async with self.get_session() as session:
             group = ChatGroup(
                 name=name,
                 chat_ids=chat_ids,
             )
             session.add(group)
-            await session.commit()
+            await session.flush()
             await session.refresh(group)
             return group
 
     async def get_chat_groups(self) -> List[ChatGroup]:
         """Получить все группы чатов"""
-        async with self.async_session() as session:
+        async with self.get_session() as session:
             result = await session.execute(select(ChatGroup).order_by(ChatGroup.id))
-            return result.scalars().all()
+            return list(result.scalars().all())
 
     async def get_chat_group(self, group_id: int) -> Optional[ChatGroup]:
         """Получить группу чатов по ID"""
-        async with self.async_session() as session:
+        async with self.get_session() as session:
             result = await session.execute(
                 select(ChatGroup).where(ChatGroup.id == group_id)
             )
@@ -207,7 +267,7 @@ class Database:
         self, group_id: int, name: str = None, chat_ids: List[int] = None
     ) -> Optional[ChatGroup]:
         """Обновить группу чатов"""
-        async with self.async_session() as session:
+        async with self.get_session() as session:
             group = await session.get(ChatGroup, group_id)
             if not group:
                 return None
@@ -218,19 +278,18 @@ class Database:
                 group.chat_ids = chat_ids
 
             group.updated_at = datetime.utcnow()
-            await session.commit()
+            await session.flush()
             await session.refresh(group)
             return group
 
     async def delete_chat_group(self, group_id: int) -> bool:
         """Удалить группу чатов"""
-        async with self.async_session() as session:
+        async with self.get_session() as session:
             group = await session.get(ChatGroup, group_id)
             if not group:
                 return False
 
             await session.delete(group)
-            await session.commit()
             return True
 
     # ========== МЕТОДЫ ДЛЯ РАССЫЛОК ==========
@@ -239,30 +298,30 @@ class Database:
         self, template_id: int, group_ids: List[int], total_chats: int = 0
     ) -> Mailing:
         """Создать новую рассылку"""
-        async with self.async_session() as session:
+        async with self.get_session() as session:
             mailing = Mailing(
                 template_id=template_id,
                 group_ids=group_ids,
                 total_chats=total_chats,
-                status="pending",  # Исправлено: начальный статус pending
+                status="pending",
             )
             session.add(mailing)
-            await session.commit()
+            await session.flush()
             await session.refresh(mailing)
             return mailing
 
     async def get_mailings(self, limit: int = None) -> List[Mailing]:
         """Получить все рассылки"""
-        async with self.async_session() as session:
+        async with self.get_session() as session:
             query = select(Mailing).order_by(desc(Mailing.id))
             if limit:
                 query = query.limit(limit)
             result = await session.execute(query)
-            return result.scalars().all()
+            return list(result.scalars().all())
 
     async def get_mailing(self, mailing_id: int) -> Optional[Mailing]:
         """Получить рассылку по ID"""
-        async with self.async_session() as session:
+        async with self.get_session() as session:
             result = await session.execute(
                 select(Mailing).where(Mailing.id == mailing_id)
             )
@@ -276,7 +335,7 @@ class Database:
         failed_count: int = None,
     ) -> Optional[Mailing]:
         """Обновить статус рассылки"""
-        async with self.async_session() as session:
+        async with self.get_session() as session:
             mailing = await session.get(Mailing, mailing_id)
             if not mailing:
                 return None
@@ -290,7 +349,7 @@ class Database:
             if status == "completed":
                 mailing.completed_at = datetime.utcnow()
 
-            await session.commit()
+            await session.flush()
             await session.refresh(mailing)
             return mailing
 
@@ -308,16 +367,15 @@ class Database:
 
     async def delete_mailing(self, mailing_id: int) -> bool:
         """Удалить рассылку"""
-        async with self.async_session() as session:
+        async with self.get_session() as session:
             mailing = await session.get(Mailing, mailing_id)
             if not mailing:
                 return False
 
             await session.delete(mailing)
-            await session.commit()
             return True
 
-    # ========== ДОПОЛНИТЕЛЬНЫЕ МЕТОДЫ ДЛЯ СОВМЕСТИМОСТИ ==========
+    # ========== ДОПОЛНИТЕЛЬНЫЕ МЕТОДЫ ==========
 
     async def get_recent_mailings(self, limit: int = 10) -> List[Mailing]:
         """Получить последние рассылки"""
@@ -325,110 +383,41 @@ class Database:
 
     async def get_mailing_stats(self) -> dict:
         """Получить статистику рассылок"""
-        async with self.async_session() as session:
-            # Общее количество рассылок
-            total_result = await session.execute(select(Mailing.id).count())
-            total_mailings = total_result.scalar()
-
-            # Количество по статусам
-            pending_result = await session.execute(
-                select(Mailing.id).where(Mailing.status == "pending").count()
-            )
-            pending_count = pending_result.scalar()
-
-            in_progress_result = await session.execute(
-                select(Mailing.id).where(Mailing.status == "in_progress").count()
-            )
-            in_progress_count = in_progress_result.scalar()
-
-            completed_result = await session.execute(
-                select(Mailing.id).where(Mailing.status == "completed").count()
-            )
-            completed_count = completed_result.scalar()
-
-            failed_result = await session.execute(
-                select(Mailing.id).where(Mailing.status == "failed").count()
-            )
-            failed_count = failed_result.scalar()
-
-            return {
-                "total": total_mailings,
-                "pending": pending_count,
-                "in_progress": in_progress_count,
-                "completed": completed_count,
-                "failed": failed_count,
+        async with self.get_session() as session:
+            # Подсчет по статусам
+            stats = {
+                "total": 0,
+                "pending": 0,
+                "in_progress": 0,
+                "completed": 0,
+                "failed": 0,
             }
+
+            result = await session.execute(select(Mailing))
+            mailings = result.scalars().all()
+
+            for mailing in mailings:
+                stats["total"] += 1
+                stats[mailing.status] = stats.get(mailing.status, 0) + 1
+
+            return stats
 
     async def cleanup_old_mailings(self, days: int = 30) -> int:
         """Очистить старые рассылки"""
         cutoff_date = datetime.utcnow() - timedelta(days=days)
 
-        async with self.async_session() as session:
+        async with self.get_session() as session:
             result = await session.execute(
                 delete(Mailing).where(Mailing.created_at < cutoff_date)
             )
-            await session.commit()
             return result.rowcount
 
-    # ========== ВСПОМОГАТЕЛЬНЫЕ МЕТОДЫ ==========
-
-    async def get_template_usage_stats(self) -> List[dict]:
-        """Получить статистику использования шаблонов"""
-        async with self.async_session() as session:
-            # Получаем все шаблоны
-            templates_result = await session.execute(select(Template))
-            templates = templates_result.scalars().all()
-
-            stats = []
-            for template in templates:
-                # Считаем использования в рассылках
-                usage_result = await session.execute(
-                    select(Mailing.id).where(Mailing.template_id == template.id).count()
-                )
-                usage_count = usage_result.scalar()
-
-                stats.append(
-                    {
-                        "template_id": template.id,
-                        "template_name": template.name,
-                        "usage_count": usage_count,
-                        "created_at": template.created_at,
-                    }
-                )
-
-            return stats
-
-    async def get_group_usage_stats(self) -> List[dict]:
-        """Получить статистику использования групп"""
-        async with self.async_session() as session:
-            # Получаем все группы
-            groups_result = await session.execute(select(ChatGroup))
-            groups = groups_result.scalars().all()
-
-            stats = []
-            for group in groups:
-                # Считаем использования в рассылках
-                mailings_result = await session.execute(select(Mailing))
-                mailings = mailings_result.scalars().all()
-
-                usage_count = 0
-                for mailing in mailings:
-                    if group.id in mailing.group_ids:
-                        usage_count += 1
-
-                stats.append(
-                    {
-                        "group_id": group.id,
-                        "group_name": group.name,
-                        "chat_count": len(group.chat_ids),
-                        "usage_count": usage_count,
-                        "created_at": group.created_at,
-                    }
-                )
-
-            return stats
-
-    # ========== ЭКСПОРТ/ИМПОРТ ДАННЫХ ==========
+    async def clear_all_data(self):
+        """Очистить все данные (для тестов)"""
+        async with self.get_session() as session:
+            await session.execute(delete(Mailing))
+            await session.execute(delete(ChatGroup))
+            await session.execute(delete(Template))
 
     async def export_data(self) -> dict:
         """Экспорт всех данных"""
@@ -475,10 +464,47 @@ class Database:
             ],
         }
 
-    async def clear_all_data(self):
-        """Очистить все данные (для тестов)"""
-        async with self.async_session() as session:
-            await session.execute(delete(Mailing))
-            await session.execute(delete(ChatGroup))
-            await session.execute(delete(Template))
-            await session.commit()
+
+# ========== ГЛОБАЛЬНЫЙ ЭКЗЕМПЛЯР И ФУНКЦИИ ==========
+
+_database: Optional[Database] = None
+
+
+def get_database() -> Database:
+    """Получение экземпляра базы данных"""
+    global _database
+    if _database is None:
+        raise RuntimeError(
+            "База данных не инициализирована. Вызовите init_database() сначала."
+        )
+    return _database
+
+
+def init_database(
+    database_url: str = "sqlite+aiosqlite:///bot_database.db", echo: bool = False
+) -> Database:
+    """
+    Инициализация базы данных
+
+    Args:
+        database_url: URL для подключения к БД
+        echo: Логирование SQL запросов
+
+    Returns:
+        Database: Экземпляр базы данных
+    """
+    global _database
+    _database = Database(database_url, echo)
+    return _database
+
+
+async def get_session() -> AsyncGenerator[AsyncSession, None]:
+    """
+    Получение сессии базы данных
+
+    Yields:
+        AsyncSession: Сессия базы данных
+    """
+    db = get_database()
+    async with db.get_session() as session:
+        yield session
