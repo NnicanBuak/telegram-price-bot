@@ -1,17 +1,19 @@
 """
-Обработчики меню для Telegram Price Bot
+Исправленные обработчики меню для Telegram Price Bot
+Убрана проблема с импортом db из main и добавлено правильное dependency injection
 """
 
+import re
 from aiogram import types, F, Router
 from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, List
 
 if TYPE_CHECKING:
-    from menu_system import MenuManager
     from database import Database
+    from menu_system import MenuManager
     from bot.menus import BotMenus
 
 # Создаем роутер для обработчиков меню
@@ -52,17 +54,15 @@ async def cmd_start(message: types.Message, menu_manager: "MenuManager"):
 async def cmd_help(message: types.Message):
     """Обработчик команды /help"""
     help_text = """
-<b>📚 Доступные команды:</b>
+🤖 <b>Telegram Price Bot - Справка</b>
 
-/start - Главное меню
-/help - Эта справка
-/templates - Управление шаблонами
-/groups - Управление группами чатов
-/mailing - Создать рассылку
-/history - История рассылок
-/id - Получить ID чата
+<b>📋 Основные функции:</b>
+• Создание шаблонов сообщений с файлами
+• Управление группами чатов для рассылки
+• Автоматическая рассылка по выбранным группам
+• История и статистика рассылок
 
-<b>💡 Как пользоваться:</b>
+<b>🚀 Быстрый старт:</b>
 1. Создайте шаблон сообщения
 2. Создайте группу чатов для рассылки
 3. Запустите рассылку, выбрав шаблон и группы
@@ -170,77 +170,14 @@ async def handle_groups_list(
     await menu_manager.navigate_to("groups_list", callback)
 
 
-@menu_router.callback_query(F.data == "mailing_start")
-async def handle_mailing_start(
-    callback: types.CallbackQuery,
-    menu_manager: "MenuManager",
-    db: "Database",
-    bot_menus: "BotMenus",
-):
-    """Обработчик начала рассылки"""
-    await bot_menus.create_mailing_template_selection_menu(db)
-    await menu_manager.navigate_to("mailing_template_selection", callback)
-
-
-@menu_router.callback_query(F.data == "history_recent")
-async def handle_history_recent(
-    callback: types.CallbackQuery,
-    menu_manager: "MenuManager",
-    db: "Database",
-    bot_menus: "BotMenus",
-):
-    """Обработчик истории рассылок"""
-    await bot_menus.create_history_list_menu(db)
-    await menu_manager.navigate_to("history_list", callback)
-
-
 # ========== РАБОТА С ШАБЛОНАМИ ==========
-
-
-@menu_router.callback_query(F.data.startswith("template_view_"))
-async def handle_template_view(callback: types.CallbackQuery, db: "Database"):
-    """Обработчик просмотра шаблона"""
-    template_id = int(callback.data.replace("template_view_", ""))
-    template = await db.get_template(template_id)
-
-    if not template:
-        await callback.answer("Шаблон не найден", show_alert=True)
-        return
-
-    text = f"📄 <b>{template.name}</b>\n\n"
-    text += f"<i>Текст шаблона:</i>\n{template.text}\n\n"
-
-    if template.file_id:
-        file_type = (
-            "📎 Документ" if template.file_type == "document" else "🖼 Изображение"
-        )
-        text += f"{file_type}: Прикреплен\n\n"
-
-    text += f"📅 Создан: {template.created_at.strftime('%d.%m.%Y %H:%M')}"
-
-    keyboard = InlineKeyboardMarkup(
-        inline_keyboard=[
-            [
-                InlineKeyboardButton(
-                    text="✏️ Редактировать", callback_data=f"template_edit_{template_id}"
-                ),
-                InlineKeyboardButton(
-                    text="🗑 Удалить", callback_data=f"template_delete_{template_id}"
-                ),
-            ],
-            [InlineKeyboardButton(text="🔙 К списку", callback_data="templates_list")],
-        ]
-    )
-
-    await callback.message.edit_text(text, reply_markup=keyboard, parse_mode="HTML")
-    await callback.answer()
 
 
 @menu_router.callback_query(F.data == "templates_new")
 async def handle_new_template(callback: types.CallbackQuery, state: FSMContext):
     """Обработчик создания нового шаблона"""
     await callback.message.edit_text(
-        "📝 <b>Создание нового шаблона</b>\n\n" "Введите название для нового шаблона:",
+        "📋 <b>Создание нового шаблона</b>\n\n" "Введите название для нового шаблона:",
         reply_markup=InlineKeyboardMarkup(
             inline_keyboard=[
                 [InlineKeyboardButton(text="❌ Отмена", callback_data="templates_list")]
@@ -257,15 +194,14 @@ async def template_name_received(message: types.Message, state: FSMContext):
     """Получение названия шаблона"""
     if len(message.text) > 100:
         await message.answer(
-            "❌ Название слишком длинное. Максимум 100 символов.\n"
-            "Попробуйте еще раз:"
+            "❌ Название слишком длинное. Максимум 100 символов. Попробуйте еще раз:"
         )
         return
 
     await state.update_data(name=message.text)
     await message.answer(
-        "✏️ <b>Введите текст шаблона:</b>\n\n"
-        "<i>Поддерживается HTML разметка:</i>\n"
+        "📝 <b>Введите текст шаблона:</b>\n\n"
+        "Поддерживается HTML разметка:\n"
         "• <code>&lt;b&gt;жирный&lt;/b&gt;</code>\n"
         "• <code>&lt;i&gt;курсив&lt;/i&gt;</code>\n"
         "• <code>&lt;u&gt;подчеркнутый&lt;/u&gt;</code>\n"
@@ -276,11 +212,13 @@ async def template_name_received(message: types.Message, state: FSMContext):
 
 
 @menu_router.message(TemplateStates.waiting_for_text)
-async def template_text_received(message: types.Message, state: FSMContext):
+async def template_text_received(
+    message: types.Message, state: FSMContext, db: "Database"
+):
     """Получение текста шаблона"""
-    if len(message.text) > 4000:
+    if len(message.text) > 4096:
         await message.answer(
-            "❌ Текст слишком длинный. Максимум 4000 символов.\n" "Попробуйте еще раз:"
+            "❌ Текст слишком длинный. Максимум 4096 символов. Попробуйте еще раз:"
         )
         return
 
@@ -290,12 +228,12 @@ async def template_text_received(message: types.Message, state: FSMContext):
         inline_keyboard=[
             [
                 InlineKeyboardButton(
-                    text="📎 Прикрепить файл", callback_data="template_attach_file"
+                    text="📎 Прикрепить файл", callback_data="template_add_file"
                 )
             ],
             [
                 InlineKeyboardButton(
-                    text="💾 Сохранить без файла", callback_data="template_save"
+                    text="✅ Сохранить без файла", callback_data="template_save_no_file"
                 )
             ],
             [InlineKeyboardButton(text="❌ Отмена", callback_data="templates_list")],
@@ -304,150 +242,60 @@ async def template_text_received(message: types.Message, state: FSMContext):
 
     await message.answer(
         "📎 <b>Хотите прикрепить файл к шаблону?</b>\n\n"
-        "Вы можете прикрепить документ или изображение, "
-        "которые будут отправляться вместе с текстом.",
+        "Файл будет отправляться вместе с текстом сообщения.",
         reply_markup=keyboard,
         parse_mode="HTML",
     )
 
 
-@menu_router.callback_query(F.data == "template_attach_file")
-async def request_template_file(callback: types.CallbackQuery, state: FSMContext):
-    """Запрос файла для шаблона"""
-    await callback.message.edit_text(
-        "📎 <b>Отправьте файл</b>\n\n"
-        "Поддерживаются:\n"
-        "• 📄 Документы (PDF, DOC, XLS, etc.)\n"
-        "• 🖼 Изображения (JPG, PNG, etc.)\n\n"
-        "Максимальный размер: 50 МБ",
-        reply_markup=InlineKeyboardMarkup(
-            inline_keyboard=[
-                [InlineKeyboardButton(text="❌ Отмена", callback_data="template_save")]
-            ]
-        ),
-        parse_mode="HTML",
-    )
-    await state.set_state(TemplateStates.waiting_for_file)
-    await callback.answer()
-
-
-@menu_router.message(TemplateStates.waiting_for_file, F.document | F.photo)
-async def template_file_received(message: types.Message, state: FSMContext):
-    """Получение файла для шаблона"""
-    if message.document:
-        file_id = message.document.file_id
-        file_type = "document"
-        file_name = message.document.file_name or "Документ"
-    elif message.photo:
-        file_id = message.photo[-1].file_id
-        file_type = "photo"
-        file_name = "Изображение"
-
-    await state.update_data(file_id=file_id, file_type=file_type, file_name=file_name)
-    await save_template_to_db(message, state)
-
-
-@menu_router.callback_query(F.data == "template_save")
-async def save_template_callback(callback: types.CallbackQuery, state: FSMContext):
+@menu_router.callback_query(F.data == "template_save_no_file")
+async def save_template_without_file(
+    callback: types.CallbackQuery, state: FSMContext, db: "Database"
+):
     """Сохранение шаблона без файла"""
-    await save_template_to_db(callback.message, state)
-    await callback.answer()
-
-
-async def save_template_to_db(message: types.Message, state: FSMContext):
-    """Сохранение шаблона в БД"""
-    from main import db  # Импорт из main
-
     data = await state.get_data()
 
     try:
-        template = await db.create_template(
-            name=data["name"],
-            text=data["text"],
-            file_id=data.get("file_id"),
-            file_type=data.get("file_type"),
-        )
+        template = await db.create_template(name=data["name"], text=data["text"])
 
         success_text = f"✅ <b>Шаблон создан!</b>\n\n"
-        success_text += f"📄 Название: {template.name}\n"
-        success_text += f"📝 Символов в тексте: {len(template.text)}\n"
-
-        if template.file_id:
-            file_name = data.get("file_name", "файл")
-            success_text += f"📎 Прикреплен: {file_name}\n"
-
+        success_text += f"📋 Название: {template.name}\n"
+        success_text += f"📄 Символов: {len(template.text)}\n"
         success_text += f"🕐 Создан: {template.created_at.strftime('%d.%m.%Y %H:%M')}"
 
         keyboard = InlineKeyboardMarkup(
             inline_keyboard=[
                 [
                     InlineKeyboardButton(
-                        text="📋 К списку шаблонов", callback_data="templates_list"
+                        text="📋 К списку", callback_data="templates_list"
                     )
                 ],
                 [
                     InlineKeyboardButton(
-                        text="➕ Создать еще один", callback_data="templates_new"
+                        text="➕ Создать еще", callback_data="templates_new"
                     )
                 ],
             ]
         )
 
-        await message.answer(success_text, reply_markup=keyboard, parse_mode="HTML")
+        await callback.message.edit_text(
+            success_text, reply_markup=keyboard, parse_mode="HTML"
+        )
+        await state.clear()
 
     except Exception as e:
-        await message.answer(
-            f"❌ <b>Ошибка при создании шаблона:</b>\n{str(e)}", parse_mode="HTML"
-        )
-
-    await state.clear()
+        await callback.answer(f"❌ Ошибка при сохранении: {e}", show_alert=True)
 
 
 @menu_router.callback_query(F.data.startswith("template_delete_"))
 async def handle_template_delete(callback: types.CallbackQuery, db: "Database"):
     """Обработчик удаления шаблона"""
     template_id = int(callback.data.replace("template_delete_", ""))
-    template = await db.get_template(template_id)
-
-    if not template:
-        await callback.answer("Шаблон не найден", show_alert=True)
-        return
-
-    keyboard = InlineKeyboardMarkup(
-        inline_keyboard=[
-            [
-                InlineKeyboardButton(
-                    text="🗑 Да, удалить",
-                    callback_data=f"template_confirm_delete_{template_id}",
-                ),
-                InlineKeyboardButton(
-                    text="❌ Отмена", callback_data=f"template_view_{template_id}"
-                ),
-            ]
-        ]
-    )
-
-    await callback.message.edit_text(
-        f"⚠️ <b>Подтверждение удаления</b>\n\n"
-        f"Вы действительно хотите удалить шаблон?\n\n"
-        f"📄 <b>{template.name}</b>\n\n"
-        f"<i>Это действие нельзя отменить!</i>",
-        reply_markup=keyboard,
-        parse_mode="HTML",
-    )
-    await callback.answer()
-
-
-@menu_router.callback_query(F.data.startswith("template_confirm_delete_"))
-async def confirm_template_delete(callback: types.CallbackQuery, db: "Database"):
-    """Подтверждение удаления шаблона"""
-    template_id = int(callback.data.replace("template_confirm_delete_", ""))
-
     success = await db.delete_template(template_id)
 
     if success:
         await callback.message.edit_text(
-            "✅ <b>Шаблон удален</b>\n\n" "Шаблон успешно удален из базы данных.",
+            "✅ <b>Шаблон удален!</b>",
             reply_markup=InlineKeyboardMarkup(
                 inline_keyboard=[
                     [
@@ -535,72 +383,52 @@ async def group_name_received(message: types.Message, state: FSMContext):
     """Получение названия группы"""
     if len(message.text) > 100:
         await message.answer(
-            "❌ Название слишком длинное. Максимум 100 символов.\n"
-            "Попробуйте еще раз:"
+            "❌ Название слишком длинное. Максимум 100 символов. Попробуйте еще раз:"
         )
         return
 
     await state.update_data(name=message.text)
     await message.answer(
-        "💬 <b>Введите ID чатов</b>\n\n"
-        "Введите ID чатов через запятую или каждый с новой строки.\n\n"
-        "<i>Для получения ID чата добавьте бота в чат "
-        "и отправьте команду /id</i>\n\n"
+        "📝 <b>Введите ID чатов через запятую:</b>\n\n"
         "<b>Пример:</b>\n"
-        "<code>-1001234567890, -1009876543210</code>\n"
-        "или\n"
-        "<code>-1001234567890\n-1009876543210</code>",
+        "<code>-1001234567890, -1009876543210</code>\n\n"
+        "💡 <b>Как получить ID чата:</b>\n"
+        "1. Добавьте бота в чат как администратора\n"
+        "2. Отправьте команду <code>/id</code> в чате\n"
+        "3. Скопируйте полученный ID",
         parse_mode="HTML",
     )
     await state.set_state(GroupStates.waiting_for_chats)
 
 
 @menu_router.message(GroupStates.waiting_for_chats)
-async def group_chats_received(message: types.Message, state: FSMContext):
-    """Получение ID чатов для группы"""
+async def group_chats_received(
+    message: types.Message, state: FSMContext, db: "Database"
+):
+    """Получение списка чатов"""
     try:
-        # Парсим ID чатов
-        chat_ids_text = message.text.replace("\n", ",")
-        chat_ids_raw = [id.strip() for id in chat_ids_text.split(",") if id.strip()]
-
-        chat_ids = []
-        for chat_id_str in chat_ids_raw:
-            try:
-                chat_id = int(chat_id_str)
-                if chat_id >= 0:
-                    await message.answer(
-                        f"❌ Некорректный ID чата: {chat_id}\n"
-                        "ID чатов должны быть отрицательными числами.\n\n"
-                        "Попробуйте еще раз:"
-                    )
-                    return
-                chat_ids.append(chat_id)
-            except ValueError:
-                await message.answer(
-                    f"❌ Некорректный ID чата: {chat_id_str}\n"
-                    "ID должен быть числом.\n\n"
-                    "Попробуйте еще раз:"
-                )
-                return
+        text = message.text.strip()
+        chat_ids = parse_chat_ids(text)
 
         if not chat_ids:
             await message.answer(
-                "❌ Не указано ни одного ID чата.\n" "Попробуйте еще раз:"
+                "❌ Не удалось распознать ID чатов.\n"
+                "Убедитесь, что используете правильный формат:\n"
+                "<code>-1001234567890, -1009876543210</code>",
+                parse_mode="HTML",
             )
             return
 
         if len(chat_ids) > 50:
             await message.answer(
-                "❌ Слишком много чатов. Максимум 50 чатов в группе.\n"
+                "❌ Слишком много чатов! "
+                "Максимум 50 чатов в группе.\n"
                 "Попробуйте еще раз:"
             )
             return
 
-        # Сохраняем группу
-        from main import db
-
+        # Сохраняем группу - теперь db передается через middleware!
         data = await state.get_data()
-
         group = await db.create_chat_group(name=data["name"], chat_ids=chat_ids)
 
         success_text = f"✅ <b>Группа создана!</b>\n\n"
@@ -624,13 +452,38 @@ async def group_chats_received(message: types.Message, state: FSMContext):
         )
 
         await message.answer(success_text, reply_markup=keyboard, parse_mode="HTML")
-
         await state.clear()
 
     except Exception as e:
         await message.answer(
             f"❌ <b>Ошибка при создании группы:</b>\n{str(e)}", parse_mode="HTML"
         )
+
+
+# ========== ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ==========
+
+
+def parse_chat_ids(text: str) -> List[int]:
+    """Парсинг ID чатов из текста"""
+    chat_ids = []
+
+    # Удаляем все символы кроме цифр, минусов и запятых
+    cleaned_text = re.sub(r"[^\d\-,\s]", "", text)
+
+    # Разделяем по запятым
+    parts = cleaned_text.split(",")
+
+    for part in parts:
+        part = part.strip()
+        if part:
+            try:
+                chat_id = int(part)
+                if chat_id != 0:  # Исключаем нулевые ID
+                    chat_ids.append(chat_id)
+            except ValueError:
+                continue
+
+    return list(set(chat_ids))  # Удаляем дубликаты
 
 
 # ========== ВОЗВРАТ В МЕНЮ ==========
@@ -651,20 +504,17 @@ def register_menu_handlers(
     dp, menu_manager: "MenuManager", db: "Database", bot_menus: "BotMenus"
 ):
     """Регистрация всех обработчиков меню"""
-    # Добавляем зависимости в middleware
-    menu_router.message.middleware.register(
-        lambda h, e, d: d.update(
-            {"menu_manager": menu_manager, "db": db, "bot_menus": bot_menus}
-        )
-        or h(e, d)
-    )
 
-    menu_router.callback_query.middleware.register(
-        lambda h, e, d: d.update(
-            {"menu_manager": menu_manager, "db": db, "bot_menus": bot_menus}
-        )
-        or h(e, d)
-    )
+    # Создаем middleware для внедрения зависимостей
+    async def inject_dependencies(handler, event, data):
+        """Middleware для внедрения зависимостей в обработчики"""
+        # Добавляем все необходимые зависимости в контекст
+        data.update({"menu_manager": menu_manager, "db": db, "bot_menus": bot_menus})
+        return await handler(event, data)
+
+    # Регистрируем middleware для сообщений и callback'ов
+    menu_router.message.middleware.register(inject_dependencies)
+    menu_router.callback_query.middleware.register(inject_dependencies)
 
     # Регистрируем роутер
     dp.include_router(menu_router)

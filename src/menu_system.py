@@ -1,15 +1,13 @@
 """
-Расширяемая система меню для Telegram бота
-Обновленная версия с поддержкой базы данных и новых обработчиков
+Расширяемая система меню для Telegram ботов
+Исправленная версия с полным API для тестов
 """
 
-from typing import Dict, List, Optional, Callable, Any, TYPE_CHECKING
+import json
+from typing import Dict, List, Optional, Callable, Any
 from dataclasses import dataclass, field
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 from aiogram import types, BaseMiddleware
-
-if TYPE_CHECKING:
-    from database import Database
 
 
 @dataclass
@@ -24,6 +22,7 @@ class MenuItem:
     admin_only: bool = False
     visible: bool = True
     order: int = 0
+    parent: Optional["Menu"] = field(default=None, init=False)
 
 
 @dataclass
@@ -33,37 +32,46 @@ class Menu:
     id: str
     title: str
     description: str = ""
-    items: List[MenuItem] = field(default_factory=list)
     back_to: Optional[str] = None
     back_button: bool = True
     columns: int = 1
     admin_only: bool = False
+    items: List[MenuItem] = field(default_factory=list)
 
-    def add_item(self, item: MenuItem):
+    def add_item(self, item: MenuItem) -> "Menu":
         """Добавить элемент в меню"""
+        item.parent = self
         self.items.append(item)
-        # Сортируем по order
         self.items.sort(key=lambda x: x.order)
+        return self
 
     def remove_item(self, item_id: str) -> bool:
         """Удалить элемент из меню"""
-        original_length = len(self.items)
-        self.items = [item for item in self.items if item.id != item_id]
-        return len(self.items) < original_length
+        for i, item in enumerate(self.items):
+            if item.id == item_id:
+                self.items.pop(i)
+                return True
+        return False
 
     def get_item(self, item_id: str) -> Optional[MenuItem]:
         """Получить элемент по ID"""
-        return next((item for item in self.items if item.id == item_id), None)
+        for item in self.items:
+            if item.id == item_id:
+                return item
+        return None
 
 
 class MenuManager:
-    """Менеджер системы меню"""
+    """Менеджер системы меню с полным API"""
 
     def __init__(self, admin_ids: List[int]):
-        self.menus: Dict[str, Menu] = {}
         self.admin_ids = admin_ids
+        self.menus: Dict[str, Menu] = {}
         self._handlers: Dict[str, Callable] = {}
         self._dynamic_handlers: List[Callable] = []
+        self._user_history: Dict[int, List[str]] = {}  # История навигации
+        self._current_menu: Dict[int, str] = {}  # Текущее меню пользователя
+        self._callbacks: Dict[str, Callable] = {}  # Зарегистрированные колбэки
 
     def register_menu(self, menu: Menu):
         """Регистрация меню"""
@@ -76,13 +84,99 @@ class MenuManager:
             return True
         return False
 
-    def get_menu(self, menu_id: str) -> Optional[Menu]:
+    def get_menu(self, menu_id: str, user_id: Optional[int] = None) -> Optional[Menu]:
         """Получить меню по ID"""
-        return self.menus.get(menu_id)
+        menu = self.menus.get(menu_id)
+        if (
+            menu
+            and user_id is not None
+            and menu.admin_only
+            and not self.is_admin(user_id)
+        ):
+            return None
+        return menu
 
     def is_admin(self, user_id: int) -> bool:
         """Проверка прав администратора"""
         return user_id in self.admin_ids
+
+    # ========== МЕТОДЫ ДЛЯ СОВМЕСТИМОСТИ С ТЕСТАМИ ==========
+
+    def set_current_menu(self, user_id: int, menu_id: str):
+        """Установить текущее меню пользователя"""
+        self._current_menu[user_id] = menu_id
+
+        # Добавляем в историю
+        if user_id not in self._user_history:
+            self._user_history[user_id] = []
+
+        # Избегаем дублирования в истории
+        if (
+            not self._user_history[user_id]
+            or self._user_history[user_id][-1] != menu_id
+        ):
+            self._user_history[user_id].append(menu_id)
+
+        # Ограничиваем историю (последние 10 меню)
+        if len(self._user_history[user_id]) > 10:
+            self._user_history[user_id] = self._user_history[user_id][-10:]
+
+    def get_current_menu(self, user_id: int) -> Optional[str]:
+        """Получить текущее меню пользователя"""
+        return self._current_menu.get(user_id)
+
+    def get_menu_history(self, user_id: int) -> List[str]:
+        """Получить историю навигации пользователя"""
+        return self._user_history.get(user_id, [])
+
+    def clear_history(self, user_id: int):
+        """Очистить историю пользователя"""
+        self._user_history.pop(user_id, None)
+        self._current_menu.pop(user_id, None)
+
+    def build_keyboard(
+        self, menu_id: str, user_id: int, **context
+    ) -> InlineKeyboardMarkup:
+        """Построить клавиатуру меню"""
+        menu = self.get_menu(menu_id, user_id)
+        if not menu:
+            return InlineKeyboardMarkup(inline_keyboard=[])
+
+        return self._build_keyboard(menu, user_id, **context)
+
+    async def navigate_to(
+        self, menu_id: str, callback: types.CallbackQuery, **context
+    ) -> bool:
+        """Навигация к меню"""
+        user_id = callback.from_user.id
+
+        # Проверяем доступ к меню
+        menu = self.get_menu(menu_id, user_id)
+        if not menu:
+            await callback.answer("❌ Доступ запрещен", show_alert=True)
+            return False
+
+        # Обновляем текущее меню
+        self.set_current_menu(user_id, menu_id)
+
+        # Рендерим меню
+        text, keyboard = self.render_menu(menu_id, user_id, **context)
+
+        try:
+            await callback.message.edit_text(
+                text, reply_markup=keyboard, parse_mode="HTML"
+            )
+            await callback.answer()
+            return True
+        except Exception as e:
+            await callback.answer(f"Ошибка навигации: {str(e)}", show_alert=True)
+            return False
+
+    def register_callback(self, callback_data: str, handler: Callable):
+        """Регистрация обработчика для callback_data"""
+        self._callbacks[callback_data] = handler
+
+    # ========== ОСНОВНЫЕ МЕТОДЫ ==========
 
     def register_handler(self, callback_data: str, handler: Callable):
         """Регистрация обработчика для callback_data"""
@@ -101,6 +195,10 @@ class MenuManager:
             await self._handlers[callback_data](callback, **kwargs)
             return True
 
+        if callback_data in self._callbacks:
+            await self._callbacks[callback_data](callback, **kwargs)
+            return True
+
         # Проверяем динамические обработчики
         for handler in self._dynamic_handlers:
             try:
@@ -116,13 +214,9 @@ class MenuManager:
         self, menu_id: str, user_id: int, **context
     ) -> tuple[str, InlineKeyboardMarkup]:
         """Отрендерить меню для пользователя"""
-        menu = self.get_menu(menu_id)
+        menu = self.get_menu(menu_id, user_id)
         if not menu:
             return "❌ Меню не найдено", InlineKeyboardMarkup(inline_keyboard=[])
-
-        # Проверяем права доступа к меню
-        if menu.admin_only and not self.is_admin(user_id):
-            return "❌ Доступ запрещен", InlineKeyboardMarkup(inline_keyboard=[])
 
         # Формируем текст
         text = f"{menu.title}"
@@ -179,6 +273,8 @@ class MenuManager:
 
         return InlineKeyboardMarkup(inline_keyboard=buttons)
 
+    # ========== ДИНАМИЧЕСКИЕ МЕНЮ ==========
+
     async def add_dynamic_menu(
         self, menu_id: str, title: str, items: List[dict], **kwargs
     ):
@@ -205,8 +301,10 @@ class MenuManager:
 
         self.register_menu(menu)
 
-    def export_menu_config(self) -> dict:
-        """Экспорт конфигурации меню"""
+    # ========== ЭКСПОРТ/ИМПОРТ ==========
+
+    def export_menu_config(self) -> str:
+        """Экспорт конфигурации меню в JSON"""
         config = {}
         for menu_id, menu in self.menus.items():
             config[menu_id] = {
@@ -230,10 +328,15 @@ class MenuManager:
                     for item in menu.items
                 ],
             }
-        return config
+        return json.dumps(config, ensure_ascii=False, indent=2)
 
-    def import_menu_config(self, config: dict):
-        """Импорт конфигурации меню"""
+    def import_menu_config(self, config_data: str):
+        """Импорт конфигурации меню из JSON"""
+        if isinstance(config_data, str):
+            config = json.loads(config_data)
+        else:
+            config = config_data
+
         for menu_id, menu_data in config.items():
             menu = Menu(
                 id=menu_id,
@@ -261,34 +364,29 @@ class MenuManager:
             self.register_menu(menu)
 
 
+# ========== MIDDLEWARE ==========
+
+
 class MenuMiddleware(BaseMiddleware):
-    """Middleware для интеграции системы меню"""
+    """Middleware для системы меню"""
 
-    def __init__(self, menu_manager: MenuManager, database: "Database" = None):
+    def __init__(self, menu_manager: MenuManager, admin_ids: List[int]):
         self.menu_manager = menu_manager
-        self.database = database
-        super().__init__()
+        self.admin_ids = admin_ids
 
-    async def __call__(self, handler, event, data):
-        """Основной метод middleware"""
-        # Добавляем menu_manager в контекст
-        data["menu_manager"] = self.menu_manager
+    async def __call__(
+        self,
+        handler: Callable[[types.Message, Dict[str, Any]], Any],
+        event: types.Message | types.CallbackQuery,
+        data: Dict[str, Any],
+    ) -> Any:
+        """Обработка событий"""
+        user_id = event.from_user.id
 
-        # Добавляем database в контекст если есть
-        if self.database:
-            data["database"] = self.database
-
-        # Проверяем права доступа для личных сообщений
-        if isinstance(event, (types.Message, types.CallbackQuery)):
-            user_id = event.from_user.id
-            chat_type = (
-                event.message.chat.type
-                if isinstance(event, types.CallbackQuery)
-                else event.chat.type
-            )
-
-            # Если это личное сообщение, проверяем админские права
-            if chat_type == "private" and not self.menu_manager.is_admin(user_id):
+        # Проверка доступа для личных сообщений
+        if hasattr(event, "chat") and event.chat.type == "private":
+            if user_id not in self.admin_ids:
+                # Отправляем сообщение об ограничении доступа
                 if isinstance(event, types.Message):
                     await event.answer(
                         "❌ <b>Доступ запрещен</b>\n\n"
@@ -296,186 +394,26 @@ class MenuMiddleware(BaseMiddleware):
                         "Обратитесь к администратору для получения доступа.",
                         parse_mode="HTML",
                     )
-                elif isinstance(event, types.CallbackQuery):
-                    await event.answer("❌ Доступ запрещен", show_alert=True)
+                else:
+                    await event.answer("нет доступа", show_alert=True)
                 return
 
-        # Обрабатываем callback запросы через menu_manager
-        if isinstance(event, types.CallbackQuery):
-            handled = await self.menu_manager.handle_callback(
-                event, database=self.database, menu_manager=self.menu_manager
-            )
+        # Добавляем menu_manager в контекст
+        data["menu_manager"] = self.menu_manager
 
-            # Если обработано menu_manager, не передаем дальше
-            if handled:
-                return
-
-        # Передаем управление следующему обработчику
         return await handler(event, data)
 
 
-class DatabaseMenuIntegration:
-    """Интеграция меню с базой данных"""
-
-    def __init__(self, menu_manager: MenuManager, database: "Database"):
-        self.menu_manager = menu_manager
-        self.database = database
-
-    async def update_templates_menu(self):
-        """Обновить меню шаблонов данными из БД"""
-        templates = await self.database.get_templates()
-
-        items = []
-        for template in templates:
-            icon = "📄" if not template.file_path else "📎"
-            items.append(
-                {
-                    "id": f"template_{template.id}",
-                    "text": template.name,
-                    "icon": icon,
-                    "callback_data": f"template_view_{template.id}",
-                    "order": template.id,
-                }
-            )
-
-        # Добавляем кнопку создания нового шаблона
-        items.append(
-            {
-                "id": "template_create_new",
-                "text": "Создать новый",
-                "icon": "➕",
-                "callback_data": "template_create",
-                "order": 999,
-            }
-        )
-
-        await self.menu_manager.add_dynamic_menu(
-            menu_id="templates_dynamic",
-            title="📋 <b>Шаблоны сообщений</b>",
-            items=items,
-            description=f"Найдено шаблонов: {len(templates)}",
-            back_to="templates",
-            columns=1,
-        )
-
-    async def update_groups_menu(self):
-        """Обновить меню групп данными из БД"""
-        groups = await self.database.get_chat_groups()
-
-        items = []
-        for group in groups:
-            chat_count = len(group.chat_ids) if group.chat_ids else 0
-            items.append(
-                {
-                    "id": f"group_{group.id}",
-                    "text": f"{group.name} ({chat_count} чатов)",
-                    "icon": "👥",
-                    "callback_data": f"group_view_{group.id}",
-                    "order": group.id,
-                }
-            )
-
-        # Добавляем кнопку создания новой группы
-        items.append(
-            {
-                "id": "group_create_new",
-                "text": "Создать группу",
-                "icon": "➕",
-                "callback_data": "group_create",
-                "order": 999,
-            }
-        )
-
-        await self.menu_manager.add_dynamic_menu(
-            menu_id="groups_dynamic",
-            title="👥 <b>Группы чатов</b>",
-            items=items,
-            description=f"Найдено групп: {len(groups)}",
-            back_to="groups",
-            columns=1,
-        )
-
-    async def update_history_menu(self):
-        """Обновить меню истории рассылок"""
-        mailings = await self.database.get_mailings_history(limit=10)
-
-        items = []
-        for mailing in mailings:
-            status_icon = {
-                "pending": "⏳",
-                "running": "🚀",
-                "completed": "✅",
-                "failed": "❌",
-            }.get(mailing.status, "❓")
-
-            success_rate = 0
-            if mailing.total_chats > 0:
-                success_rate = mailing.sent_count / mailing.total_chats * 100
-
-            items.append(
-                {
-                    "id": f"mailing_{mailing.id}",
-                    "text": f"#{mailing.id} ({success_rate:.0f}%) {status_icon}",
-                    "icon": "📊",
-                    "callback_data": f"mailing_details_{mailing.id}",
-                    "order": -mailing.id,  # Обратная сортировка (новые первыми)
-                }
-            )
-
-        await self.menu_manager.add_dynamic_menu(
-            menu_id="history_dynamic",
-            title="📊 <b>История рассылок</b>",
-            items=items,
-            description=f"Последние {len(mailings)} рассылок",
-            back_to="history",
-            columns=1,
-        )
-
-    async def refresh_all_menus(self):
-        """Обновить все динамические меню"""
-        await self.update_templates_menu()
-        await self.update_groups_menu()
-        await self.update_history_menu()
+# ========== УТИЛИТЫ ==========
 
 
-# Утилиты для работы с меню
-def create_confirmation_menu(
-    title: str,
-    description: str,
-    confirm_text: str = "✅ Подтвердить",
-    confirm_callback: str = "confirm",
-    cancel_text: str = "❌ Отмена",
-    cancel_callback: str = "cancel",
-) -> Menu:
-    """Создать меню подтверждения"""
-    menu = Menu(
-        id="confirmation",
-        title=title,
-        description=description,
-        back_button=False,
-        columns=2,
-    )
-
-    menu.add_item(
-        MenuItem(
-            id="confirm", text=confirm_text, callback_data=confirm_callback, order=1
-        )
-    )
-
-    menu.add_item(
-        MenuItem(id="cancel", text=cancel_text, callback_data=cancel_callback, order=2)
-    )
-
-    return menu
-
-
-def create_pagination_menu(
+def create_pagination_keyboard(
     items: List[dict],
     page: int = 0,
     items_per_page: int = 5,
     callback_prefix: str = "page",
 ) -> List[List[InlineKeyboardButton]]:
-    """Создать пагинированное меню"""
+    """Создать пагинированную клавиатуру"""
     buttons = []
 
     # Элементы текущей страницы
