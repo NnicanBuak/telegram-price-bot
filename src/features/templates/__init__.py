@@ -1,36 +1,23 @@
 """
 Templates feature - управление шаблонами сообщений
 
-Публичный API для работы с шаблонами.
-Экспортирует только необходимые компоненты для использования в других частях приложения.
+Упрощенный API для работы с шаблонами в MVP версии.
 """
 
 from .handlers import TemplateHandlers
 from .services import TemplateService
-from .models import (
-    CreateTemplateData,
-    UpdateTemplateData,
-    TemplateResponse,
-    TemplateValidationError,
-)
+from .models import TemplateData, ValidationError
 
-# Экспортируем только публичный API
 __all__ = [
-    # Основные компоненты
     "TemplateHandlers",
     "TemplateService",
-    # DTOs
-    "CreateTemplateData",
-    "UpdateTemplateData",
-    "TemplateResponse",
-    # Исключения
-    "TemplateValidationError",
-    # Функции инициализации
+    "TemplateData",
+    "ValidationError",
     "create_template_feature",
 ]
 
 
-def add_template_feature(database) -> tuple[TemplateHandlers, TemplateService]:
+def create_template_feature(database) -> tuple[TemplateHandlers, TemplateService]:
     """
     Фабрика для создания feature шаблонов
 

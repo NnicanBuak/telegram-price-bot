@@ -17,12 +17,6 @@ class TemplateStates(StatesGroup):
     waiting_file = State()
 
 
-class TemplateStates(StatesGroup):
-    waiting_name = State()
-    waiting_text = State()
-    waiting_file = State()
-
-
 class TemplateHandlers:
     """Обработчики для работы с шаблонами"""
 
@@ -163,13 +157,37 @@ class TemplateHandlers:
 
             template = await self.template_service.create_template(template_data)
 
+            # Создаем keyboard для возврата
+            keyboard = InlineKeyboardMarkup(
+                inline_keyboard=[
+                    [
+                        InlineKeyboardButton(
+                            text="📋 К списку", callback_data="template_list"
+                        )
+                    ],
+                    [
+                        InlineKeyboardButton(
+                            text="🏠 Главное меню", callback_data="menu_main"
+                        )
+                    ],
+                ]
+            )
+
+            file_info = ""
+            if file_id:
+                file_info = f"\n📎 <b>Файл:</b> {'Фото' if file_type == 'photo' else 'Документ'}"
+
             await message.answer(
-                TemplateTexts.template_created(template),
-                reply_markup=TemplateKeyboards.create_flow(),
+                f"✅ <b>Шаблон создан!</b>\n\n"
+                f"🔢 <b>ID:</b> {template.id}\n"
+                f"📝 <b>Название:</b> {template.name}{file_info}",
+                reply_markup=keyboard,
                 parse_mode="HTML",
             )
 
         except TemplateValidationError as e:
+            await message.answer(f"❌ Ошибка валидации: {e}")
+        except ValidationError as e:
             await message.answer(f"❌ Ошибка валидации: {e}")
         except Exception as e:
             await message.answer(f"❌ Ошибка создания: {e}")
@@ -185,147 +203,6 @@ class TemplateHandlers:
                 await callback.message.edit_text(
                     TemplateTexts.empty_list(),
                     reply_markup=TemplateKeyboards.empty_list(),
-                    parse_mode="HTML",
-                )
-                await callback.answer()
-                return
-
-            await callback.message.edit_text(
-                TemplateTexts.list_header(len(templates)),
-                reply_markup=TemplateKeyboards.template_list(templates),
-                parse_mode="HTML",
-            )
-            await callback.answer()
-
-        except Exception as e:
-            await callback.answer(f"❌ Ошибка: {e}", show_alert=True)
-
-    async def view_template(self, callback: types.CallbackQuery):
-        """Просмотр шаблона"""
-        try:
-            template_id = int(callback.data.split("_")[-1])
-            template = await self.template_service.get_template(template_id)
-
-            if not template:
-                await callback.answer(TemplateMessages.NOT_FOUND, show_alert=True)
-                return
-
-            await callback.message.edit_text(
-                TemplateTexts.template_details(template),
-                reply_markup=TemplateKeyboards.template_view(template.id),
-                parse_mode="HTML",
-            )
-            await callback.answer()
-
-        except ValueError:
-            await callback.answer("❌ Неверный ID шаблона", show_alert=True)
-        except Exception as e:
-            await callback.answer(f"❌ Ошибка: {e}", show_alert=True)
-
-    async def delete_template(self, callback: types.CallbackQuery):
-        """Удалить шаблон"""
-        try:
-            template_id = int(callback.data.split("_")[-1])
-            success = await self.template_service.delete_template(template_id)
-
-            if success:
-                await callback.answer(TemplateMessages.DELETED_SUCCESS, show_alert=True)
-                await self.show_list(callback)  # Возвращаемся к списку
-            else:
-                await callback.answer(TemplateMessages.DELETE_ERROR, show_alert=True)
-
-        except ValueError:
-            await callback.answer("❌ Неверный ID шаблона", show_alert=True)
-        except Exception as e:
-            await callback.answer(f"❌ Ошибка: {e}", show_alert=True)
-
-    async def process_file(self, message: types.Message, state: FSMContext):
-        """Обработка файла шаблона"""
-        file_id = None
-        file_type = None
-
-        if message.document:
-            file_id = message.document.file_id
-            file_type = "document"
-        elif message.photo:
-            file_id = message.photo[-1].file_id
-            file_type = "photo"
-        else:
-            await message.answer(
-                "❌ Неподдерживаемый тип файла.\n" "Отправьте фото или документ:"
-            )
-            return
-
-        await self._create_template(message, state, file_id, file_type)
-
-    async def skip_file(self, callback: types.CallbackQuery, state: FSMContext):
-        """Пропустить файл и создать шаблон"""
-        await self._create_template(callback.message, state)
-        await callback.answer()
-
-    async def _create_template(
-        self,
-        message: types.Message,
-        state: FSMContext,
-        file_id: str = None,
-        file_type: str = None,
-    ):
-        """Создать шаблон"""
-        data = await state.get_data()
-
-        try:
-            template_data = TemplateData(
-                name=data["name"],
-                text=data["text"],
-                file_id=file_id,
-                file_type=file_type,
-            )
-
-            template = await self.template_service.create_template(template_data)
-
-            file_info = ""
-            if file_id:
-                file_info = f"\n📎 <b>Файл:</b> {'Фото' if file_type == 'photo' else 'Документ'}"
-
-            await message.answer(
-                f"✅ <b>Шаблон создан!</b>\n\n"
-                f"🔢 <b>ID:</b> {template.id}\n"
-                f"📝 <b>Название:</b> {template.name}{file_info}",
-                reply_markup=ConfirmationHelper.create_back_keyboard("templates"),
-                parse_mode="HTML",
-            )
-
-        except ValidationError as e:
-            await message.answer(f"❌ Ошибка валидации: {e}")
-        except Exception as e:
-            await message.answer(f"❌ Ошибка создания: {e}")
-
-        await state.clear()
-
-    async def show_list(self, callback: types.CallbackQuery):
-        """Показать список шаблонов"""
-        try:
-            templates = await self.template_service.get_templates()
-
-            if not templates:
-                await callback.message.edit_text(
-                    "📄 <b>Список шаблонов</b>\n\n"
-                    "❌ Шаблоны не найдены\n\n"
-                    "Создайте первый шаблон для начала работы.",
-                    reply_markup=InlineKeyboardMarkup(
-                        inline_keyboard=[
-                            [
-                                InlineKeyboardButton(
-                                    text="➕ Создать", callback_data="template_create"
-                                )
-                            ],
-                            [
-                                InlineKeyboardButton(
-                                    text="◀️ Назад", callback_data="templates"
-                                )
-                            ],
-                        ]
-                    ),
                     parse_mode="HTML",
                 )
                 await callback.answer()
@@ -356,15 +233,21 @@ class TemplateHandlers:
                             text="➕ Создать", callback_data="template_create"
                         )
                     ],
-                    [InlineKeyboardButton(text="◀️ Назад", callback_data="templates")],
+                    [
+                        InlineKeyboardButton(
+                            text="◀️ Назад", callback_data="menu_templates"
+                        )
+                    ],
                 ]
             )
+
+            keyboard = InlineKeyboardMarkup(inline_keyboard=buttons)
 
             await callback.message.edit_text(
                 f"📄 <b>Список шаблонов</b>\n\n"
                 f"📊 Найдено: {len(templates)}\n\n"
                 "Выберите шаблон для просмотра:",
-                reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons),
+                reply_markup=keyboard,
                 parse_mode="HTML",
             )
             await callback.answer()
@@ -379,7 +262,7 @@ class TemplateHandlers:
             template = await self.template_service.get_template(template_id)
 
             if not template:
-                await callback.answer("❌ Шаблон не найден", show_alert=True)
+                await callback.answer(TemplateMessages.NOT_FOUND, show_alert=True)
                 return
 
             file_info = ""
@@ -393,14 +276,28 @@ class TemplateHandlers:
                 else template.text
             )
 
+            keyboard = InlineKeyboardMarkup(
+                inline_keyboard=[
+                    [
+                        InlineKeyboardButton(
+                            text="🗑️ Удалить",
+                            callback_data=f"template_delete_{template.id}",
+                        )
+                    ],
+                    [
+                        InlineKeyboardButton(
+                            text="◀️ К списку", callback_data="template_list"
+                        )
+                    ],
+                ]
+            )
+
             await callback.message.edit_text(
                 f"📄 <b>Шаблон #{template.id}</b>\n\n"
                 f"📝 <b>Название:</b> {template.name}\n\n"
                 f"📄 <b>Текст:</b>\n{text_preview}{file_info}\n\n"
                 f"📅 <b>Создан:</b> {template.created_at.strftime('%d.%m.%Y %H:%M')}",
-                reply_markup=ConfirmationHelper.create_template_view_keyboard(
-                    template.id
-                ),
+                reply_markup=keyboard,
                 parse_mode="HTML",
             )
             await callback.answer()
@@ -417,12 +314,18 @@ class TemplateHandlers:
             success = await self.template_service.delete_template(template_id)
 
             if success:
-                await callback.answer("✅ Шаблон удален", show_alert=True)
+                await callback.answer(TemplateMessages.DELETED_SUCCESS, show_alert=True)
                 await self.show_list(callback)  # Возвращаемся к списку
             else:
-                await callback.answer("❌ Ошибка удаления", show_alert=True)
+                await callback.answer(TemplateMessages.DELETE_ERROR, show_alert=True)
 
         except ValueError:
             await callback.answer("❌ Неверный ID шаблона", show_alert=True)
         except Exception as e:
             await callback.answer(f"❌ Ошибка: {e}", show_alert=True)
+
+
+# Создаем роутер для обратной совместимости
+template_router = Router()
+
+# Этот роутер будет зарегистрирован через TemplateHandlers в FeatureRegistry
