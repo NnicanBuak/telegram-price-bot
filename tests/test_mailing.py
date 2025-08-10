@@ -25,8 +25,8 @@ project_root = Path(__file__).parent.parent.absolute()
 src_path = project_root / "src"
 sys.path.insert(0, str(src_path))
 
-from src_depricated.database import Database
-from src_depricated.bot.handlers.mailing_handlers import (
+from src.database import Database
+from src.bot.handlers.mailing_handlers import (
     execute_mailing_task,
     estimate_mailing_time,
 )

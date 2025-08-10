@@ -29,10 +29,10 @@ if not os.getenv("TEST_ADMIN_IDS") and not os.getenv("ADMIN_IDS"):
     os.environ["TEST_ADMIN_IDS"] = "123456789,987654321"
 
 # Импорты из src
-from src_depricated.config import Config
-from src_depricated.database import Database
-from src_depricated.menu_system import MenuManager, Menu, MenuItem
-from src_depricated.bot.menus import setup_bot_menus
+from src.config import Config
+from src.database import Database
+from src.menu_system import MenuManager, Menu, MenuItem
+from src.bot.menus import setup_bot_menus
 
 # Конфигурация pytest
 pytest_plugins = ["pytest_asyncio"]

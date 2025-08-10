@@ -1,294 +1,426 @@
-#!/usr/bin/env python3
+"""
+Основной файл Telegram Price Bot
+Обновлен для новой архитектуры с разделением по features
+"""
+
 import asyncio
 import logging
-from aiogram import Bot, Dispatcher
-from aiogram.client.default import DefaultBotProperties
-from aiogram.enums import ParseMode
+import sys
+import os
+from typing import Any, Awaitable, Callable, Dict
+
+from aiogram import Bot, Dispatcher, types
+from aiogram.filters import CommandStart, Command
 from aiogram.fsm.storage.memory import MemoryStorage
-from aiogram.filters import Command
-from aiogram import types
 
-from config import Config
+# Добавляем src в Python path для импортов
+sys.path.append(os.path.join(os.path.dirname(__file__), 'src'))
+
+# Импорты основных компонентов
+from config import config
 from database import Database
-from menu_system import MenuManager, MenuMiddleware
-from bot.menus import setup_bot_menus
-from bot.handlers.menu_handlers import menu_router
+from shared.menu_system import MenuManager, MenuMiddleware
 
-# from bot.handlers.mailing_handlers import mailing_router
-# from bot.handlers.template_handlers import template_router
-# from bot.handlers.group_handlers import group_router
+# Импорты роутеров из features
+from features.templates.handlers import template_router
+from features.groups.handlers import group_router
+from features.mailing.handlers import mailing_router
+from features.common.handlers import menu_router
 
 # Настройка логирования
 logging.basicConfig(
-    level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
-)
-logger = logging.getLogger(__name__)
+    menu_manager.register_menu(mailing_menu)
+    
+    # Меню настроек
+    settings_menu = Menu(
+        id="settings",
+        title="⚙️ <b>Настройки</b>",
+        description="Конфигурация и управление ботом",
+        back_to="main",
+        admin_only=True,
+        columns=1
+    )
+    
+    settings_menu.add_item(MenuItem(
+        id="backup",
+        text="Резервная копия",
+        icon="💾",
+        callback_data="backup_create",
+        admin_only=True,
+        order=1
+    ))
+    
+    settings_menu.add_item(MenuItem(
+        id="logs",
+        text="Логи системы",
+        icon="📋",
+        callback_data="logs_view",
+        admin_only=True,
+        order=2
+    ))
+    
+    settings_menu.add_item(MenuItem(
+        id="stats",
+        text="Статистика",
+        icon="📈",
+        callback_data="stats_view",
+        admin_only=True,
+        order=3
+    ))
+    
+    menu_manager.register_menu(settings_menu)
 
-# Глобальные переменные для использования в обработчиках и тестах
-bot = None
-db = None
-menu_manager = None
-bot_menus = None
-config = None
-dp = None
 
+async def setup_handlers(dp: Dispatcher, menu_manager: MenuManager):
+    """Настройка обработчиков команд и callback'ов"""
+    
+    @dp.message(CommandStart())
+    async def cmd_start(message: types.Message):
+        """Обработчик команды /start"""
+        user_id = message.from_user.id
+        text, keyboard = menu_manager.render_menu("main", user_id)
+        await message.answer(text, reply_markup=keyboard, parse_mode="HTML")
+    
+    @dp.message(Command("help"))
+    async def cmd_help(message: types.Message):
+        """Обработчик команды /help"""
+        help_text = """🤖 <b>Telegram Price Bot - Справка</b>
 
-# ========== КОМАНДЫ ДЛЯ ЭКСПОРТА В ТЕСТЫ ==========
+<b>📋 Основные функции:</b>
+• Создание шаблонов сообщений с файлами
+• Управление группами чатов для рассылки
+• Автоматическая рассылка по выбранным группам
+• История и статистика рассылок
 
-
-async def cmd_start(message: types.Message):
-    """Обработчик команды /start - экспортируется для тестов"""
-    global menu_manager
-    if not menu_manager:
-        await message.answer("❌ Бот еще не инициализирован")
-        return
-
-    user_id = message.from_user.id
-    text, keyboard = menu_manager.render_menu("main", user_id)
-    await message.answer(text, reply_markup=keyboard, parse_mode="HTML")
-
-
-async def cmd_help(message: types.Message):
-    """Обработчик команды /help - экспортируется для тестов"""
-    help_text = """
-<b>📚 Доступные команды:</b>
-
-/start - Главное меню
-/help - Эта справка
-/templates - Управление шаблонами
-/groups - Управление группами чатов
-/mailing - Создать рассылку
-/history - История рассылок
-/id - Получить ID чата
-
-<b>💡 Как пользоваться:</b>
+<b>🚀 Быстрый старт:</b>
 1. Создайте шаблон сообщения
 2. Создайте группу чатов для рассылки
-3. Запустите рассылку
+3. Запустите рассылку, выбрав шаблон и группы
 
-<b>🔧 Техническая поддержка:</b>
-Если возникли проблемы, обратитесь к администратору.
-    """
-    await message.answer(help_text, parse_mode="HTML")
+<b>📝 Команды:</b>
+/start - Главное меню
+/help - Справка
+/id - Получить ID текущего чата
+/templates - Шаблоны сообщений
+/groups - Группы чатов
+/mailing - Рассылка
 
+<b>📝 Примечания:</b>
+• Бот должен быть администратором в чатах
+• Можно прикреплять файлы к шаблонам
+• Поддерживается HTML разметка в тексте"""
+        await message.answer(help_text, parse_mode="HTML")
+    
+    @dp.message(Command("id"))
+    async def cmd_id(message: types.Message):
+        """Обработчик команды /id - получение ID чата"""
+        chat_info = f"💬 <b>Информация о чате:</b>\n\n"
+        chat_info += f"ID: <code>{message.chat.id}</code>\n"
+        chat_info += f"Тип: {message.chat.type}\n"
 
-async def cmd_id(message: types.Message):
-    """Обработчик команды /id - экспортируется для тестов"""
-    chat_id = message.chat.id
-    user_id = message.from_user.id
+        if message.chat.type != "private":
+            chat_info += f"Название: {message.chat.title or 'Без названия'}\n"
+            if message.chat.username:
+                chat_info += f"Username: @{message.chat.username}\n"
 
-    text = f"<b>📋 Информация о чате:</b>\n\n"
-    text += f"🆔 ID чата: <code>{chat_id}</code>\n"
-    text += f"👤 Ваш ID: <code>{user_id}</code>\n"
-    text += f"📝 Тип чата: {message.chat.type}\n"
+        chat_info += f"\n<b>Пользователь:</b>\n"
+        chat_info += f"ID: <code>{message.from_user.id}</code>\n"
+        chat_info += f"Имя: {message.from_user.first_name}"
 
-    if message.chat.title:
-        text += f"📌 Название: {message.chat.title}\n"
+        if message.from_user.last_name:
+            chat_info += f" {message.from_user.last_name}"
 
-    await message.answer(text, parse_mode="HTML")
+        if message.from_user.username:
+            chat_info += f"\nUsername: @{message.from_user.username}"
 
+        await message.answer(chat_info, parse_mode="HTML")
+    
+    @dp.message(Command("templates"))
+    async def cmd_templates(message: types.Message):
+        """Быстрый переход к шаблонам"""
+        user_id = message.from_user.id
+        text, keyboard = menu_manager.render_menu("templates", user_id)
+        await message.answer(text, reply_markup=keyboard, parse_mode="HTML")
+    
+    @dp.message(Command("groups"))
+    async def cmd_groups(message: types.Message):
+        """Быстрый переход к группам"""
+        user_id = message.from_user.id
+        text, keyboard = menu_manager.render_menu("groups", user_id)
+        await message.answer(text, reply_markup=keyboard, parse_mode="HTML")
+    
+    @dp.message(Command("mailing"))
+    async def cmd_mailing(message: types.Message):
+        """Быстрый переход к рассылке"""
+        user_id = message.from_user.id
+        text, keyboard = menu_manager.render_menu("mailing", user_id)
+        await message.answer(text, reply_markup=keyboard, parse_mode="HTML")
 
-# ========== ФУНКЦИИ ИНИЦИАЛИЗАЦИИ ==========
-
-
-async def init_config():
-    """Инициализация конфигурации"""
-    global config
-    logger.info("⚙️ Инициализация конфигурации...")
-    try:
-        config = Config()
-        logger.info(f"✅ Конфигурация загружена (режим: {config.environment})")
-        return config
-    except Exception as e:
-        logger.error(f"❌ Ошибка загрузки конфигурации: {e}")
-        raise
-
-
-async def init_bot(config: Config):
-    """Инициализация бота"""
-    global bot
-    logger.info("🤖 Создание бота...")
-    try:
-        bot = Bot(
-            token=config.bot_token,
-            default=DefaultBotProperties(
-                parse_mode=ParseMode.HTML,
-                protect_content=False,
-                allow_sending_without_reply=True,
-            ),
-        )
-
-        # Проверяем подключение к Telegram API
-        bot_info = await bot.get_me()
-        logger.info(f"✅ Бот подключен: @{bot_info.username}")
-        return bot
-    except Exception as e:
-        logger.error(f"❌ Ошибка создания бота: {e}")
-        raise
-
-
-async def init_database(config: Config):
-    """Инициализация базы данных"""
-    global db
-    logger.info("🗄️ Инициализация базы данных...")
-    try:
-        db = Database(config.database_url)
-        await db.init_db()
-        logger.info("✅ База данных инициализирована")
-        return db
-    except Exception as e:
-        logger.error(f"❌ Ошибка инициализации БД: {e}")
-        raise
+    # Обработчик навигации по меню
+    @dp.callback_query(lambda c: c.data.startswith("menu_"))
+    async def handle_menu_navigation(callback: types.CallbackQuery):
+        """Обработчик навигации по меню"""
+        menu_id = callback.data.replace("menu_", "")
+        success = await menu_manager.navigate_to(menu_id, callback)
+        if not success:
+            await callback.answer("❌ Ошибка навигации", show_alert=True)
 
 
-async def init_menu_system(config: Config):
-    """Инициализация системы меню"""
-    global menu_manager, bot_menus
-    logger.info("📋 Инициализация системы меню...")
-    try:
-        menu_manager = MenuManager(config.admin_ids)
-        bot_menus = setup_bot_menus(menu_manager)
-        logger.info("✅ Система меню инициализирована")
-        return menu_manager, bot_menus
-    except Exception as e:
-        logger.error(f"❌ Ошибка инициализации меню: {e}")
-        raise
+def setup_routers(dp: Dispatcher):
+    """Настройка роутеров для разных модулей"""
+    # Включаем роутеры в правильном порядке
+    dp.include_router(template_router)
+    dp.include_router(group_router) 
+    dp.include_router(mailing_router)
+    dp.include_router(menu_router)  # Общие обработчики в конце
 
 
-async def init_dispatcher(config: Config, menu_manager: MenuManager):
-    """Инициализация диспетчера"""
-    global dp
-    logger.info("🚦 Инициализация диспетчера...")
-    try:
-        # Создаем диспетчер
-        dp = Dispatcher(storage=MemoryStorage())
-
-        # Регистрируем middleware
-        menu_middleware = MenuMiddleware(menu_manager, config.admin_ids)
-        dp.message.middleware(menu_middleware)
-        dp.callback_query.middleware(menu_middleware)
-
-        # Регистрируем базовые команды
-        dp.message.register(cmd_start, Command("start"))
-        dp.message.register(cmd_help, Command("help"))
-        dp.message.register(cmd_id, Command("id"))
-
-        # Регистрируем роутеры
-        dp.include_router(menu_router)
-        # dp.include_router(mailing_router)
-        # dp.include_router(template_router)
-        # dp.include_router(group_router)
-
-        logger.info("✅ Диспетчер инициализирован")
-        return dp
-    except Exception as e:
-        logger.error(f"❌ Ошибка инициализации диспетчера: {e}")
-        raise
-
-
-# ========== ОСНОВНАЯ ФУНКЦИЯ ==========
+def setup_middlewares(dp: Dispatcher, database: Database, menu_manager: MenuManager):
+    """Настройка middleware"""
+    # Middleware для проверки доступа и внедрения зависимостей
+    menu_middleware = MenuMiddleware(menu_manager, config.ADMIN_IDS)
+    dp.message.middleware.register(menu_middleware)
+    dp.callback_query.middleware.register(menu_middleware)
+    
+    # Middleware для внедрения зависимостей
+    di_middleware = DependencyInjectionMiddleware(database, menu_manager)
+    dp.message.middleware.register(di_middleware)
+    dp.callback_query.middleware.register(di_middleware)
 
 
 async def main():
     """Основная функция запуска бота"""
-    global bot, db, menu_manager, bot_menus, config, dp
-
     logger.info("🚀 Запуск Telegram Price Bot...")
-
+    
     try:
-        # Последовательная инициализация всех компонентов
-        config = await init_config()
-        bot = await init_bot(config)
-        db = await init_database(config)
-        menu_manager, bot_menus = await init_menu_system(config)
-        dp = await init_dispatcher(config, menu_manager)
-
-        logger.info("🎉 Все компоненты инициализированы успешно!")
-        logger.info(f"👥 Администраторы: {config.admin_ids}")
-        logger.info(f"🗄️ База данных: {config.database_url}")
-
-        # Запускаем бота
-        logger.info("▶️ Запуск polling...")
-        await dp.start_polling(bot, allowed_updates=["message", "callback_query"])
-
-    except KeyboardInterrupt:
-        logger.info("🛑 Получен сигнал остановки")
+        # Инициализация компонентов
+        logger.info("📊 Инициализация базы данных...")
+        database = Database(config.DATABASE_URL)
+        await database.init_database()
+        
+        logger.info("🎛️ Инициализация системы меню...")
+        menu_manager = MenuManager(config.ADMIN_IDS)
+        setup_main_menus(menu_manager)
+        
+        logger.info("🤖 Инициализация бота...")
+        bot = Bot(token=config.BOT_TOKEN)
+        storage = MemoryStorage()
+        dp = Dispatcher(storage=storage)
+        
+        # Настройка компонентов
+        logger.info("🔧 Настройка обработчиков...")
+        await setup_handlers(dp, menu_manager)
+        setup_routers(dp)
+        setup_middlewares(dp, database, menu_manager)
+        
+        # Проверка конфигурации
+        logger.info("✅ Проверка конфигурации...")
+        logger.info(f"📋 Администраторы: {config.ADMIN_IDS}")
+        logger.info(f"💾 База данных: {config.DATABASE_URL}")
+        
+        # Запуск бота
+        logger.info("🎯 Бот запущен и готов к работе!")
+        await dp.start_polling(
+            bot,
+            allowed_updates=["message", "callback_query"],
+            skip_updates=True
+        )
+        
     except Exception as e:
-        logger.error(f"💥 Критическая ошибка: {e}")
+        logger.error(f"❌ Критическая ошибка: {e}")
         raise
     finally:
-        await cleanup()
+        logger.info("🛑 Завершение работы бота...")
+        if 'database' in locals():
+            await database.close()
 
-
-async def cleanup():
-    """Очистка ресурсов при завершении"""
-    logger.info("🧹 Очистка ресурсов...")
-
-    global bot, db, dp
-
-    if dp:
-        await dp.stop_polling()
-        logger.info("✅ Polling остановлен")
-
-    if db:
-        await db.close()
-        logger.info("✅ База данных закрыта")
-
-    if bot:
-        await bot.session.close()
-        logger.info("✅ Сессия бота закрыта")
-
-    logger.info("🏁 Очистка завершена")
-
-
-# ========== ФУНКЦИИ ДЛЯ ТЕСТОВ ==========
-
-
-async def get_bot_instance():
-    """Получить экземпляр бота для тестов"""
-    global bot
-    if not bot:
-        config = await init_config()
-        bot = await init_bot(config)
-    return bot
-
-
-async def get_db_instance():
-    """Получить экземпляр БД для тестов"""
-    global db
-    if not db:
-        config = await init_config()
-        db = await init_database(config)
-    return db
-
-
-async def get_menu_manager_instance():
-    """Получить экземпляр менеджера меню для тестов"""
-    global menu_manager
-    if not menu_manager:
-        config = await init_config()
-        menu_manager, _ = await init_menu_system(config)
-    return menu_manager
-
-
-def reset_global_state():
-    """Сброс глобального состояния для тестов"""
-    global bot, db, menu_manager, bot_menus, config, dp
-    bot = None
-    db = None
-    menu_manager = None
-    bot_menus = None
-    config = None
-    dp = None
-
-
-# ========== ТОЧКА ВХОДА ==========
 
 if __name__ == "__main__":
     try:
         asyncio.run(main())
     except KeyboardInterrupt:
-        logger.info("👋 До свидания!")
+        logger.info("🛑 Получен сигнал завершения (Ctrl+C)")
     except Exception as e:
-        logger.error(f"💥 Фатальная ошибка: {e}")
-        exit(1)
+        logger.error(f"💥 Неожиданная ошибка: {e}")
+        sys.exit(1)level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.FileHandler('bot.log'),
+        logging.StreamHandler()
+    ]
+)
+logger = logging.getLogger(__name__)
+
+
+class DependencyInjectionMiddleware:
+    """Middleware для внедрения зависимостей в обработчики"""
+    
+    def __init__(self, database: Database, menu_manager: MenuManager):
+        self.database = database
+        self.menu_manager = menu_manager
+    
+    async def __call__(
+        self,
+        handler: Callable[[types.TelegramObject, Dict[str, Any]], Awaitable[Any]],
+        event: types.TelegramObject,
+        data: Dict[str, Any]
+    ) -> Any:
+        """Добавляем зависимости в контекст обработчика"""
+        data.update({
+            'database': self.database,
+            'menu_manager': self.menu_manager
+        })
+        return await handler(event, data)
+
+
+def setup_main_menus(menu_manager: MenuManager):
+    """Настройка основных меню системы"""
+    from shared.menu_system import Menu, MenuItem
+    
+    # Главное меню
+    main_menu = Menu(
+        id="main",
+        title="🏠 <b>Главное меню</b>",
+        description="Добро пожаловать в Telegram Price Bot!\n\nВыберите нужную функцию:",
+        columns=1
+    )
+    
+    main_menu.add_item(MenuItem(
+        id="templates",
+        text="Шаблоны сообщений",
+        icon="📄",
+        callback_data="menu_templates",
+        order=1
+    ))
+    
+    main_menu.add_item(MenuItem(
+        id="groups", 
+        text="Группы чатов",
+        icon="👥",
+        callback_data="menu_groups",
+        order=2
+    ))
+    
+    main_menu.add_item(MenuItem(
+        id="mailing",
+        text="Рассылка",
+        icon="📮",
+        callback_data="menu_mailing", 
+        order=3
+    ))
+    
+    main_menu.add_item(MenuItem(
+        id="history",
+        text="История рассылок",
+        icon="📊",
+        callback_data="mailings_history",
+        order=4
+    ))
+    
+    main_menu.add_item(MenuItem(
+        id="settings",
+        text="Настройки",
+        icon="⚙️",
+        callback_data="menu_settings",
+        admin_only=True,
+        order=5
+    ))
+    
+    menu_manager.register_menu(main_menu)
+    
+    # Меню шаблонов
+    templates_menu = Menu(
+        id="templates",
+        title="📄 <b>Шаблоны сообщений</b>",
+        description="Создание и управление шаблонами для рассылки",
+        back_to="main",
+        columns=1
+    )
+    
+    templates_menu.add_item(MenuItem(
+        id="templates_list",
+        text="Список шаблонов",
+        icon="📋",
+        callback_data="templates_list",
+        order=1
+    ))
+    
+    templates_menu.add_item(MenuItem(
+        id="templates_new",
+        text="Создать новый",
+        icon="➕",
+        callback_data="templates_new",
+        order=2
+    ))
+    
+    templates_menu.add_item(MenuItem(
+        id="templates_export",
+        text="Экспорт шаблонов",
+        icon="📤",
+        callback_data="template_export_all",
+        admin_only=True,
+        order=3
+    ))
+    
+    templates_menu.add_item(MenuItem(
+        id="templates_import",
+        text="Импорт шаблонов", 
+        icon="📥",
+        callback_data="template_import",
+        admin_only=True,
+        order=4
+    ))
+    
+    menu_manager.register_menu(templates_menu)
+    
+    # Меню групп
+    groups_menu = Menu(
+        id="groups",
+        title="👥 <b>Группы чатов</b>",
+        description="Управление группами чатов для рассылки",
+        back_to="main",
+        columns=1
+    )
+    
+    groups_menu.add_item(MenuItem(
+        id="groups_list",
+        text="Список групп",
+        icon="📋", 
+        callback_data="groups_list",
+        order=1
+    ))
+    
+    groups_menu.add_item(MenuItem(
+        id="groups_new",
+        text="Создать группу",
+        icon="➕",
+        callback_data="group_create",
+        order=2
+    ))
+    
+    menu_manager.register_menu(groups_menu)
+    
+    # Меню рассылки
+    mailing_menu = Menu(
+        id="mailing",
+        title="📮 <b>Рассылка сообщений</b>",
+        description="Создание и запуск рассылок по группам чатов",
+        back_to="main",
+        columns=1
+    )
+    
+    mailing_menu.add_item(MenuItem(
+        id="mailing_create",
+        text="Создать рассылку",
+        icon="📮",
+        callback_data="mailing_create",
+        order=1
+    ))
+    
+    mailing_menu.add_item(MenuItem(
+        id="mailing_history",
+        text="История рассылок",
+        icon="📊",
+        callback_data="mailings_history",
+        order=2
+    ))

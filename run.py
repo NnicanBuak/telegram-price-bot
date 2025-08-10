@@ -14,7 +14,7 @@ src_path = project_root / "src"
 sys.path.insert(0, str(src_path))
 
 # Импорты из src
-from src_depricated.main import main
+from src.main import main
 
 
 if __name__ == "__main__":
