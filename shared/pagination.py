@@ -1,8 +1,3 @@
-"""
-Утилиты для пагинации в Telegram ботах
-Вынесено из handlers для переиспользования
-"""
-
 from typing import List, Any, Optional, Callable
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 

@@ -1,8 +1,3 @@
-"""
-Расширяемая система меню для Telegram ботов
-Перенесена в shared для переиспользования
-"""
-
 import json
 from typing import Dict, List, Optional, Callable, Any
 from dataclasses import dataclass, field
