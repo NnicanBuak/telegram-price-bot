@@ -7,7 +7,7 @@ import pytest
 import os
 from unittest.mock import patch
 
-from src.config import Config
+from src_depricated.config import Config
 
 
 class TestSmartConfig:

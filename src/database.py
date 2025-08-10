@@ -1,8 +1,3 @@
-"""
-Упрощенный модуль для работы с SQLite базой данных
-Исправленная версия с недостающими методами
-"""
-
 from datetime import datetime, timedelta
 from typing import List, Optional
 from sqlalchemy import (

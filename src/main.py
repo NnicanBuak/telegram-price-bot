@@ -1,9 +1,4 @@
 #!/usr/bin/env python3
-"""
-Telegram бот для рассылки прайс-листов по группам
-Исправленная версия с новым aiogram API и полным функционалом
-"""
-
 import asyncio
 import logging
 from aiogram import Bot, Dispatcher

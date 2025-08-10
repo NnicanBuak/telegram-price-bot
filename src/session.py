@@ -1,7 +1,3 @@
-"""
-Управление сессиями SQLite базы данных
-"""
-
 from typing import AsyncGenerator
 from contextlib import asynccontextmanager
 from sqlalchemy.ext.asyncio import (

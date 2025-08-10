@@ -12,9 +12,9 @@ from aiogram import Bot, Dispatcher, types
 from aiogram.fsm.storage.memory import MemoryStorage
 from aiogram.fsm.context import FSMContext
 
-from src.config import Config
-from src.database import Database
-from src.menu_system import MenuManager, MenuMiddleware
+from src_depricated.config import Config
+from src_depricated.database import Database
+from src_depricated.menu_system import MenuManager, MenuMiddleware
 
 
 @pytest.fixture
@@ -196,7 +196,7 @@ class TestBotIntegration:
             )
 
             # Импортируем после патча
-            from src.main import bot, dp
+            from src_depricated.main import bot, dp
 
             # Проверяем, что бот создан
             assert bot is not None
@@ -217,7 +217,7 @@ class TestBotIntegration:
         message.answer = AsyncMock()
 
         # Тест команды /start
-        from src.main import cmd_start
+        from src_depricated.main import cmd_start
 
         await cmd_start(message, menu_manager)
 
@@ -227,7 +227,7 @@ class TestBotIntegration:
 
         # Тест команды /help
         message.answer.reset_mock()
-        from src.main import cmd_help
+        from src_depricated.main import cmd_help
 
         await cmd_help(message, menu_manager)
 
@@ -346,7 +346,7 @@ class TestErrorHandling:
             mock_bot.get_me = AsyncMock(side_effect=Exception("Invalid token"))
 
             try:
-                from src.main import bot
+                from src_depricated.main import bot
 
                 bot_info = await bot.get_me()
                 assert False, "Should raise exception"

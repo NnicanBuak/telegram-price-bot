@@ -18,10 +18,10 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 # Импорты из модулей
-from src.config import Config
-from src.database import Database, Template, ChatGroup, Mailing
-from src.menu_system import MenuManager, MenuItem, Menu
-from src.bot.menus import BotMenus, setup_bot_menus
+from src_depricated.config import Config
+from src_depricated.database import Database, Template, ChatGroup, Mailing
+from src_depricated.menu_system import MenuManager, MenuItem, Menu
+from src_depricated.bot.menus import BotMenus, setup_bot_menus
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 
 
@@ -254,7 +254,7 @@ class TestMenuMiddleware:
     @pytest.mark.asyncio
     async def test_middleware_passes_admin(self, menu_manager):
         """Тест пропуска админа через middleware"""
-        from src.menu_system import MenuMiddleware
+        from src_depricated.menu_system import MenuMiddleware
 
         middleware = MenuMiddleware(menu_manager)
         handler = AsyncMock()

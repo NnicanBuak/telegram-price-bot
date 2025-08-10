@@ -8,7 +8,7 @@ import json
 from unittest.mock import AsyncMock, MagicMock
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 
-from src.menu_system import MenuManager, Menu, MenuItem, MenuMiddleware
+from src_depricated.menu_system import MenuManager, Menu, MenuItem, MenuMiddleware
 
 
 class TestMenuItem:
