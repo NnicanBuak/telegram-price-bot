@@ -1,6 +1,6 @@
 """Конфигурация меню для шаблонов"""
 
-from src.shared.menu_system import Menu, MenuItem
+from shared.menu_system import Menu, MenuItem
 
 
 def get_templates_menus():

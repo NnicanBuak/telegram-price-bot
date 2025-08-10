@@ -1,6 +1,6 @@
 """
 Обработчики для работы с группами чатов
-Функционал создания, редактирования и управления группами чатов для рассылки
+Обновлено для новой архитектуры с использованием shared утилит
 """
 
 import re
@@ -9,6 +9,7 @@ from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 from typing import TYPE_CHECKING, List
+from shared.pagination import PaginationHelper, ConfirmationHelper, MenuHelper
 
 if TYPE_CHECKING:
     from database import Database
@@ -56,7 +57,6 @@ async def show_groups_list(
                     [InlineKeyboardButton(text="◀️ Назад", callback_data="menu_groups")],
                 ]
             )
-
         else:
             text = f"""👥 <b>Группы чатов</b>
 
@@ -64,32 +64,30 @@ async def show_groups_list(
 
 Выберите группу для просмотра или редактирования:"""
 
-            # Создаем кнопки для каждой группы
-            keyboard_buttons = []
-            for group in groups:
+            # Используем PaginationHelper для создания списка
+            def group_text_func(group):
                 chat_count = len(group.chat_ids) if group.chat_ids else 0
-                button_text = f"👥 {group.name} ({chat_count} чатов)"
-                keyboard_buttons.append(
-                    [
-                        InlineKeyboardButton(
-                            text=button_text, callback_data=f"group_view_{group.id}"
-                        )
-                    ]
-                )
+                return f"{group.name} ({chat_count} чатов)"
 
-            # Добавляем кнопки управления
-            keyboard_buttons.extend(
+            def group_callback_func(group):
+                return f"group_view_{group.id}"
+
+            additional_buttons = [
                 [
-                    [
-                        InlineKeyboardButton(
-                            text="➕ Создать группу", callback_data="group_create"
-                        )
-                    ],
-                    [InlineKeyboardButton(text="◀️ Назад", callback_data="menu_groups")],
-                ]
-            )
+                    InlineKeyboardButton(
+                        text="➕ Создать группу", callback_data="group_create"
+                    )
+                ],
+                [InlineKeyboardButton(text="◀️ Назад", callback_data="menu_groups")],
+            ]
 
-            keyboard = InlineKeyboardMarkup(inline_keyboard=keyboard_buttons)
+            keyboard = PaginationHelper.create_simple_list_keyboard(
+                items=groups,
+                item_text_func=group_text_func,
+                item_callback_func=group_callback_func,
+                item_icon="👥",
+                additional_buttons=additional_buttons,
+            )
 
         await callback.message.edit_text(text, reply_markup=keyboard)
         await callback.answer()
@@ -109,10 +107,8 @@ async def start_group_creation(callback: types.CallbackQuery, state: FSMContext)
 
 💡 <b>Совет:</b> Используйте понятные названия для удобной организации рассылок."""
 
-    keyboard = InlineKeyboardMarkup(
-        inline_keyboard=[
-            [InlineKeyboardButton(text="❌ Отмена", callback_data="groups_list")]
-        ]
+    keyboard = ConfirmationHelper.create_back_keyboard(
+        back_text="❌ Отмена", back_callback="groups_list"
     )
 
     await callback.message.edit_text(text, reply_markup=keyboard)
@@ -204,18 +200,11 @@ async def confirm_group_deletion(callback: types.CallbackQuery):
 
 Вы уверены, что хотите удалить эту группу?"""
 
-    keyboard = InlineKeyboardMarkup(
-        inline_keyboard=[
-            [
-                InlineKeyboardButton(
-                    text="✅ Да, удалить",
-                    callback_data=f"group_delete_confirm_{group_id}",
-                ),
-                InlineKeyboardButton(
-                    text="❌ Отмена", callback_data=f"group_view_{group_id}"
-                ),
-            ]
-        ]
+    keyboard = ConfirmationHelper.create_confirmation_keyboard(
+        confirm_text="✅ Да, удалить",
+        cancel_text="❌ Отмена",
+        confirm_callback=f"group_delete_confirm_{group_id}",
+        cancel_callback=f"group_view_{group_id}",
     )
 
     await callback.message.edit_text(text, reply_markup=keyboard)
@@ -329,10 +318,8 @@ async def process_group_name(message: types.Message, state: FSMContext):
 <b>Формат ввода:</b>
 -1001234567890, -1009876543210, 123456789"""
 
-    keyboard = InlineKeyboardMarkup(
-        inline_keyboard=[
-            [InlineKeyboardButton(text="❌ Отмена", callback_data="groups_list")]
-        ]
+    keyboard = ConfirmationHelper.create_back_keyboard(
+        back_text="❌ Отмена", back_callback="groups_list"
     )
 
     await message.answer(text, reply_markup=keyboard)
@@ -421,51 +408,6 @@ async def process_group_chats(
         await state.clear()
 
 
-# ========== ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ==========
-
-
-def parse_chat_ids(text: str) -> List[int]:
-    """Парсинг ID чатов из текста"""
-    chat_ids = []
-
-    # Удаляем все символы кроме цифр, минусов и запятых
-    cleaned_text = re.sub(r"[^\d\-,\s]", "", text)
-
-    # Разделяем по запятым
-    parts = cleaned_text.split(",")
-
-    for part in parts:
-        part = part.strip()
-        if part:
-            try:
-                chat_id = int(part)
-                if chat_id != 0:  # Исключаем нулевые ID
-                    chat_ids.append(chat_id)
-            except ValueError:
-                continue
-
-    return list(set(chat_ids))  # Удаляем дубликаты
-
-
-async def validate_chat_ids(bot, chat_ids: List[int]) -> tuple[List[int], List[int]]:
-    """Проверка доступности чатов"""
-    valid_chats = []
-    invalid_chats = []
-
-    for chat_id in chat_ids[:10]:  # Проверяем только первые 10 для экономии времени
-        try:
-            await bot.get_chat(chat_id)
-            valid_chats.append(chat_id)
-        except Exception:
-            invalid_chats.append(chat_id)
-
-    # Остальные чаты добавляем без проверки
-    if len(chat_ids) > 10:
-        valid_chats.extend(chat_ids[10:])
-
-    return valid_chats, invalid_chats
-
-
 # ========== РЕДАКТИРОВАНИЕ ГРУПП ==========
 
 
@@ -528,14 +470,8 @@ async def start_group_name_editing(callback: types.CallbackQuery, state: FSMCont
 
 <i>Например: "Премиум клиенты", "Региональные партнеры"</i>"""
 
-    keyboard = InlineKeyboardMarkup(
-        inline_keyboard=[
-            [
-                InlineKeyboardButton(
-                    text="❌ Отмена", callback_data=f"group_edit_{group_id}"
-                )
-            ]
-        ]
+    keyboard = ConfirmationHelper.create_back_keyboard(
+        back_text="❌ Отмена", back_callback=f"group_edit_{group_id}"
     )
 
     await callback.message.edit_text(text, reply_markup=keyboard)
@@ -566,24 +502,25 @@ async def process_group_name_edit(
         success = await database.update_chat_group_name(group_id, new_name)
 
         if success:
+            keyboard = InlineKeyboardMarkup(
+                inline_keyboard=[
+                    [
+                        InlineKeyboardButton(
+                            text="👥 К группе", callback_data=f"group_view_{group_id}"
+                        )
+                    ],
+                    [
+                        InlineKeyboardButton(
+                            text="📋 К списку", callback_data="groups_list"
+                        )
+                    ],
+                ]
+            )
+
             await message.answer(
                 f"✅ <b>Название изменено!</b>\n\n"
                 f"👥 <b>Новое название:</b> {new_name}",
-                reply_markup=InlineKeyboardMarkup(
-                    inline_keyboard=[
-                        [
-                            InlineKeyboardButton(
-                                text="👥 К группе",
-                                callback_data=f"group_view_{group_id}",
-                            )
-                        ],
-                        [
-                            InlineKeyboardButton(
-                                text="📋 К списку", callback_data="groups_list"
-                            )
-                        ],
-                    ]
-                ),
+                reply_markup=keyboard,
             )
         else:
             await message.answer("❌ Ошибка при изменении названия")
@@ -609,14 +546,8 @@ async def start_adding_chats(callback: types.CallbackQuery, state: FSMContext):
 
 💡 <b>Совет:</b> Чтобы получить ID чата, отправьте /id в нужном чате"""
 
-    keyboard = InlineKeyboardMarkup(
-        inline_keyboard=[
-            [
-                InlineKeyboardButton(
-                    text="❌ Отмена", callback_data=f"group_view_{group_id}"
-                )
-            ]
-        ]
+    keyboard = ConfirmationHelper.create_back_keyboard(
+        back_text="❌ Отмена", back_callback=f"group_view_{group_id}"
     )
 
     await callback.message.edit_text(text, reply_markup=keyboard)
@@ -668,25 +599,26 @@ async def process_adding_chats(
 
         if success:
             added_count = len(all_chat_ids) - len(existing_chat_ids)
+            keyboard = InlineKeyboardMarkup(
+                inline_keyboard=[
+                    [
+                        InlineKeyboardButton(
+                            text="👥 К группе", callback_data=f"group_view_{group_id}"
+                        )
+                    ],
+                    [
+                        InlineKeyboardButton(
+                            text="📋 К списку", callback_data="groups_list"
+                        )
+                    ],
+                ]
+            )
+
             await message.answer(
                 f"✅ <b>Чаты добавлены!</b>\n\n"
                 f"➕ <b>Добавлено:</b> {added_count}\n"
                 f"📊 <b>Всего в группе:</b> {len(all_chat_ids)}",
-                reply_markup=InlineKeyboardMarkup(
-                    inline_keyboard=[
-                        [
-                            InlineKeyboardButton(
-                                text="👥 К группе",
-                                callback_data=f"group_view_{group_id}",
-                            )
-                        ],
-                        [
-                            InlineKeyboardButton(
-                                text="📋 К списку", callback_data="groups_list"
-                            )
-                        ],
-                    ]
-                ),
+                reply_markup=keyboard,
             )
         else:
             await message.answer("❌ Ошибка при добавлении чатов")
@@ -696,3 +628,48 @@ async def process_adding_chats(
     except Exception as e:
         await message.answer(f"❌ Ошибка: {e}")
         await state.clear()
+
+
+# ========== ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ==========
+
+
+def parse_chat_ids(text: str) -> List[int]:
+    """Парсинг ID чатов из текста"""
+    chat_ids = []
+
+    # Удаляем все символы кроме цифр, минусов и запятых
+    cleaned_text = re.sub(r"[^\d\-,\s]", "", text)
+
+    # Разделяем по запятым
+    parts = cleaned_text.split(",")
+
+    for part in parts:
+        part = part.strip()
+        if part:
+            try:
+                chat_id = int(part)
+                if chat_id != 0:  # Исключаем нулевые ID
+                    chat_ids.append(chat_id)
+            except ValueError:
+                continue
+
+    return list(set(chat_ids))  # Удаляем дубликаты
+
+
+async def validate_chat_ids(bot, chat_ids: List[int]) -> tuple[List[int], List[int]]:
+    """Проверка доступности чатов"""
+    valid_chats = []
+    invalid_chats = []
+
+    for chat_id in chat_ids[:10]:  # Проверяем только первые 10 для экономии времени
+        try:
+            await bot.get_chat(chat_id)
+            valid_chats.append(chat_id)
+        except Exception:
+            invalid_chats.append(chat_id)
+
+    # Остальные чаты добавляем без проверки
+    if len(chat_ids) > 10:
+        valid_chats.extend(chat_ids[10:])
+
+    return valid_chats, invalid_chats

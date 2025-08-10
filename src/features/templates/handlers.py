@@ -13,10 +13,11 @@ from aiogram.types import (
     MessageEntity,
 )
 from aiogram.utils.keyboard import InlineKeyboardBuilder
+from shared.pagination import MenuHelper, ConfirmationHelper, PaginationHelper
 
 if TYPE_CHECKING:
     from database import Database
-    from src.shared.menu_system import MenuManager
+    from shared.menu_system import MenuManager
 
 # Роутер
 template_router = Router()

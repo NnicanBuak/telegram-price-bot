@@ -356,7 +356,7 @@ make check
 ### Добавление нового пункта меню
 
 ```python
-from menu_system import MenuItem, MenuManager
+from shared.menu_system import MenuItem, MenuManager
 
 # В файле bot.py или отдельном модуле
 def setup_custom_menu(menu_manager: MenuManager):

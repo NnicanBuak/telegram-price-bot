@@ -11,10 +11,11 @@ from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, BufferedInputFile
 from typing import TYPE_CHECKING, List, Dict
+from shared.pagination import MenuHelper, ConfirmationHelper, PaginationHelper
 
 if TYPE_CHECKING:
     from database import Database
-    from src.shared.menu_system import MenuManager
+    from shared.menu_system import MenuManager
 
 # Создаем роутер для обработчиков рассылки
 mailing_router = Router()
