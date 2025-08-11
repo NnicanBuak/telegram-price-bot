@@ -8,7 +8,7 @@ from aiogram.fsm.storage.memory import MemoryStorage
 
 from config import Config
 from database import Database
-import menu
+from menu import create_menu_system
 import handlers
 
 # Инициализируем конфигурацию и логирование
@@ -73,7 +73,7 @@ async def main():
 
         # Инициализация системы меню
         logger.info("📋 Настройка системы меню...")
-        menu_manager, menu_registry = menu.create_menu_system(config.admin_ids)
+        menu_manager, menu_registry = create_menu_system(config.admin_ids)
         logger.info("✅ Система меню готова")
 
         # Инициализация бота
@@ -90,22 +90,18 @@ async def main():
         dp.callback_query.middleware.register(dependency_middleware)
 
         # Регистрация обработчиков
+        registry = handlers.HandlerRegistry()
 
-        # registry = handlers.setup_basic_handlers(
-        #     config, database, menu_manager, menu_registry, dp
-        # )
-
-        registry = handlers.create_handler_registry(
-            config, database, menu_manager, menu_registry
+        registry.register_module(
+            handlers.commands.CommandsModule("commands", config, database, menu_manager)
         )
 
-        registry.register_module(handlers.commands)
+        registry.setup_dispatcher(dp)
 
         stats = registry.get_statistics()
         logger.info(f"✅ Зарегистрировано модулей: {stats['total_modules']}")
         logger.info(f"📋 Модули: {', '.join(stats['module_names'])}")
-        logger.info(f"🔗 Меню: {stats['menu_count']}")
-        logger.info(f"📡 Роутеры: {stats['total_routers']}")
+        logger.info(f"🧠 Обработчики: {stats['total_handlers']}")
 
         # Проверка подключения к Telegram
         bot_info = await bot.get_me()
@@ -121,10 +117,13 @@ async def main():
                         text="""Бот начал свою работу.
 Автовызов /start...""",
                     )
-                    logger.info("☑️ Бот начал свою работу для {user_id}")
+                    await registry.call_handler(
+                        "commands.start", chat_id=user_id, bot=bot
+                    )
+                    logger.info(f"☑️ Бот начал свою работу для {user_id}")
                 except Exception as e:
                     logger.warning(
-                        """❌ Бот не смог начать свою работу для {user_id} по причние:
+                        f"""❌ Бот не смог начать свою работу для {user_id} по причние:
                         {e}"""
                     )
 

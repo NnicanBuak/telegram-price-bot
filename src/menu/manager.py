@@ -77,16 +77,17 @@ class MenuManager:
         )
 
         # Отправляем меню
-        success = await self.sender.send_menu(menu, target, user_id, context)
+        if target:
+                success = await self.sender.send_menu(menu, target, user_id, context)
+            else:
+                success = await self.sender.send_menu(menu, user_id=user_id, context=context)
 
-        if success:
-            # Вызываем обработчик меню если есть
-            if menu_id in self._menu_handlers:
+            if success and menu_id in self._menu_handlers:
                 try:
                     await self._menu_handlers[menu_id](target, user_id, context)
                 except Exception as e:
                     print(f"Ошибка в обработчике меню {menu_id}: {e}")
-
+                    
         return success
 
     async def go_back(

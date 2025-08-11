@@ -1,213 +1,252 @@
+"""
+Архитектура handlers без дублирования кода
+Одна функция для событий Telegram И программного вызова
+"""
+
+from typing import Dict, List, Optional, Any, Union, Callable
+from abc import ABC, abstractmethod
+from aiogram import Router, types, Bot
+from aiogram.filters import CommandStart, Command
 import logging
-from typing import List, Type, Protocol, Dict, Any
-from aiogram import Dispatcher, Router
-from menu import MenuManager, MenuRegistry
+
 from config import Config
 from database import Database
+from menu import MenuManager
 
 logger = logging.getLogger(__name__)
 
 
-class HandlerDependencies:
-    """Контейнер зависимостей для обработчиков"""
+class HandlerContext:
+    """Контекст выполнения handler - универсальный для событий и программных вызовов"""
 
     def __init__(
         self,
-        config: Config,
-        database: Database,
-        menu_manager: MenuManager,
-        menu_registry: MenuRegistry,
+        chat_id: int,
+        user_id: int = None,
+        bot: Bot = None,
+        message: types.Message = None,
+        callback: types.CallbackQuery = None,
+        **extra_data,
     ):
+        self.chat_id = chat_id
+        self.user_id = user_id  # Для групп user_id может быть None
+        self.bot = bot
+        self.message = message
+        self.callback = callback
+        self.extra_data = extra_data
+
+        # Для программных вызовов
+        self.is_programmatic = message is None and callback is None
+
+    async def send_message(self, text: str, **kwargs):
+        """Универсальная отправка сообщения"""
+        if self.message:
+            return await self.message.answer(text, **kwargs)
+        elif self.callback:
+            return await self.callback.message.answer(text, **kwargs)
+        elif self.bot:
+            return await self.bot.send_message(self.chat_id, text, **kwargs)
+        else:
+            raise ValueError("Нет способа отправить сообщение")
+
+    async def send_photo(self, photo, caption=None, **kwargs):
+        """Универсальная отправка фото"""
+        if self.message:
+            return await self.message.answer_photo(photo, caption=caption, **kwargs)
+        elif self.callback:
+            return await self.callback.message.answer_photo(
+                photo, caption=caption, **kwargs
+            )
+        elif self.bot:
+            return await self.bot.send_photo(
+                self.chat_id, photo, caption=caption, **kwargs
+            )
+        else:
+            raise ValueError("Нет способа отправить фото")
+
+    async def edit_message(self, text: str, **kwargs):
+        """Редактирование сообщения (только для callback)"""
+        if self.callback:
+            await self.callback.message.edit_text(text, **kwargs)
+            await self.callback.answer()
+        else:
+            # Для программных вызовов просто отправляем новое
+            await self.send_message(text, **kwargs)
+
+    @classmethod
+    def from_message(cls, message: types.Message, bot: Bot = None) -> "HandlerContext":
+        """Создать контекст из Message"""
+        return cls(
+            chat_id=message.chat.id,
+            user_id=message.from_user.id,
+            bot=bot,
+            message=message,
+        )
+
+    @classmethod
+    def from_callback(
+        cls, callback: types.CallbackQuery, bot: Bot = None
+    ) -> "HandlerContext":
+        """Создать контекст из CallbackQuery"""
+        return cls(
+            chat_id=callback.message.chat.id,
+            user_id=callback.from_user.id,
+            bot=bot,
+            callback=callback,
+        )
+
+    @classmethod
+    def for_chat(cls, chat_id: int, bot: Bot, **extra_data) -> "HandlerContext":
+        """Создать контекст для программного вызова"""
+        return cls(chat_id=chat_id, user_id=chat_id, bot=bot, **extra_data)  # Для групп
+
+
+class BaseHandler(ABC):
+    """Базовый класс для handlers"""
+
+    def __init__(self, config: Config, database: Database, menu_manager: MenuManager):
         self.config = config
         self.database = database
         self.menu_manager = menu_manager
-        self.menu_registry = menu_registry
+        self.name = self.__class__.__name__
+
+    @abstractmethod
+    async def execute(self, ctx: HandlerContext) -> Any:
+        """
+        ЕДИНСТВЕННАЯ функция handler!
+        Работает и для событий Telegram, и для программных вызовов
+        """
+        pass
+
+    def get_filters(self) -> List[Any]:
+        """Фильтры для регистрации в роутере"""
+        return []
+
+    def can_be_called_programmatically(self) -> bool:
+        """Можно ли вызывать программно"""
+        return True
 
 
-class HandlerModule(Protocol):
-    """Протокол для модулей с обработчиками"""
+class HandlerModule:
+    """Модуль с коллекцией handlers"""
 
-    @staticmethod
-    def get_router(dependencies: HandlerDependencies) -> Router:
-        """Возвращает роутер с настроенными обработчиками"""
-        ...
+    def __init__(
+        self, name: str, config: Config, database: Database, menu_manager: MenuManager
+    ):
+        self.name = name
+        self.config = config
+        self.database = database
+        self.menu_manager = menu_manager
+        self.handlers: Dict[str, BaseHandler] = {}
+        self._setup_handlers()
 
-    @staticmethod
-    def setup_menus(menu_manager: MenuManager) -> None:
-        """Настраивает меню (опционально)"""
-        ...
+    def _setup_handlers(self):
+        """Переопределяется в наследниках"""
+        pass
+
+    def register_handler(self, name: str, handler: BaseHandler):
+        """Зарегистрировать handler"""
+        self.handlers[name] = handler
+
+    def get_handler(self, name: str) -> Optional[BaseHandler]:
+        """Получить handler"""
+        return self.handlers.get(name)
+
+    def get_router(self) -> Router:
+        """Создать роутер"""
+        router = Router()
+
+        for handler in self.handlers.values():
+            filters = handler.get_filters()
+
+            for filter_obj in filters:
+                if isinstance(filter_obj, CommandStart):
+
+                    @router.message(filter_obj)
+                    async def cmd_handler(message: types.Message, bot: Bot):
+                        ctx = HandlerContext.from_message(message, bot)
+                        await handler.execute(ctx)
+
+                elif isinstance(filter_obj, Command):
+
+                    @router.message(filter_obj)
+                    async def msg_handler(message: types.Message, bot: Bot):
+                        ctx = HandlerContext.from_message(message, bot)
+                        await handler.execute(ctx)
+
+        return router
 
 
 class HandlerRegistry:
-    """Реестр для регистрации всех обработчиков"""
+    """Реестр handlers"""
 
-    def __init__(
-        self,
-        config: Config,
-        database: Database,
-        menu_manager: MenuManager,
-        menu_registry: MenuRegistry,
-    ):
-        self.config = config
-        self.database = database
-        self.menu_manager = menu_manager
-        self.menu_registry = menu_registry
-        self._handler_modules: List[HandlerModule] = []
-        self._registered_routers: List[Router] = []
+    def __init__(self):
+        self._handler_modules: Dict[str, HandlerModule] = {}
+        self.handlers: Dict[str, BaseHandler] = {}
 
-    def register_module(self, handler_module: HandlerModule) -> "HandlerRegistry":
-        """Зарегистрировать модуль с обработчиками"""
-        self._handler_modules.append(handler_module)
+    def register_module(self, module: HandlerModule):
+        """Зарегистрировать модуль"""
+        self._handler_modules[module.name] = module
 
-        # Настраиваем меню если есть
-        if hasattr(handler_module, "setup_menus"):
-            try:
-                handler_module.setup_menus(self.menu_manager)
-                logger.info(f"✅ Меню для {handler_module.__name__} настроены")
-            except Exception as e:
-                logger.error(f"❌ Ошибка настройки меню {handler_module.__name__}: {e}")
+        # Добавляем handlers в общий реестр
+        for handler_name, handler in module.handlers.items():
+            full_name = f"{module.name}.{handler_name}"
+            self.handlers[full_name] = handler
 
-        return self
+    async def call_handler(
+        self, handler_name: str, chat_id: int, bot: Bot, **extra_data
+    ) -> Any:
+        handler = self.handlers.get(handler_name)
+        if not handler:
+            raise ValueError(f"Handler {handler_name} не найден")
 
-    def register_modules(self, modules: List[HandlerModule]) -> "HandlerRegistry":
-        """Зарегистрировать несколько модулей сразу"""
-        for module in modules:
-            self.register_module(module)
-        return self
+        ctx = HandlerContext.for_chat(chat_id, bot, **extra_data)
+        return await handler.execute(ctx)
 
-    def setup_dispatcher(self, dp: Dispatcher) -> None:
-        """Настроить диспетчер со всеми зарегистрированными обработчиками"""
-        for handler_module in self._handler_modules:
-            try:
-                router = handler_module.get_router(
-                    self.config, self.database, self.menu_manager, self.menu_registry
-                )
-                dp.include_router(router)
-                self._registered_routers.append(router)
-                logger.info(f"✅ Роутер {handler_module.__name__} зарегистрирован")
+    def setup_dispatcher(self, dispatcher):
+        """Настроить диспетчер"""
+        for module in self._handler_modules.values():
+            router = module.get_router()
+            dispatcher.include_router(router)
 
-            except Exception as e:
-                logger.error(f"❌ Ошибка регистрации {handler_module.__name__}: {e}")
-                raise
+    def get_handler(self, name: str) -> Optional[BaseHandler]:
+        return self.handlers.get(name)
 
     def get_statistics(self) -> Dict[str, Any]:
-        """Получить статистику зарегистрированных модулей"""
+        """Получить статистику зарегистрированных модулей и хэндлеров"""
         return {
             "total_modules": len(self._handler_modules),
-            "total_routers": len(self._registered_routers),
-            "module_names": [module.__name__ for module in self._handler_modules],
-            "menu_count": (
-                len(self.menu_manager._menus)
-                if hasattr(self.menu_manager, "_menus")
-                else 0
-            ),
+            "total_handlers": len(self.handlers),
+            "module_names": list(self._handler_modules.keys()),
+            "modules": {
+                module_name: list(module.handlers.keys())
+                for module_name, module in self._handler_modules.items()
+            },
         }
 
-    def validate_modules(self) -> Dict[str, bool]:
-        """Проверить валидность всех модулей"""
-        results = {}
-        for module in self._handler_modules:
-            module_name = module.__name__
-            try:
-                # Проверяем наличие обязательной функции get_router
-                if not hasattr(module, "get_router"):
-                    results[module_name] = False
-                    logger.error(f"❌ {module_name}: отсутствует get_router()")
-                    continue
+    def validate_modules(self) -> None:
+        """
+        Проверить корректность зарегистрированных модулей:
+        - уникальные имена хэндлеров
+        - наличие хотя бы одного хэндлера в модуле
+        - метод execute переопределён
+        """
+        seen_names = set()
 
-                # Пробуем создать роутер
-                router = module.get_router(
-                    self.config, self.database, self.menu_manager, self.menu_registry
-                )
+        for module_name, module in self._handler_modules.items():
+            if not module.handlers:
+                raise ValueError(f"Модуль {module_name} не содержит хэндлеров")
 
-                if not isinstance(router, Router):
-                    results[module_name] = False
-                    logger.error(f"❌ {module_name}: get_router() вернул не Router")
-                    continue
+            for handler_name, handler in module.handlers.items():
+                full_name = f"{module_name}.{handler_name}"
+                if full_name in seen_names:
+                    raise ValueError(f"Дубликат имени хэндлера: {full_name}")
+                seen_names.add(full_name)
 
-                results[module_name] = True
-                logger.info(f"✅ {module_name}: валидация пройдена")
+                # Проверка, что execute переопределён
+                if handler.__class__.execute is BaseHandler.execute:
+                    raise TypeError(
+                        f"Хэндлер {full_name} не переопределяет метод execute()"
+                    )
 
-            except Exception as e:
-                results[module_name] = False
-                logger.error(f"❌ {module_name}: ошибка валидации - {e}")
-
-        return results
-
-
-def create_handler_registry(
-    config: Config,
-    database: Database,
-    menu_manager: MenuManager,
-    menu_registry: MenuRegistry,
-) -> HandlerRegistry:
-    """Фабричная функция для создания реестра обработчиков"""
-    return HandlerRegistry(config, database, menu_manager, menu_registry)
-
-
-def setup_all_handlers(
-    config: Config,
-    database: Database,
-    menu_manager: MenuManager,
-    menu_registry: MenuRegistry,
-    dispatcher: Dispatcher,
-    handler_modules: List[HandlerModule],
-) -> HandlerRegistry:
-    """Удобная функция для полной настройки всех обработчиков"""
-
-    logger.info(f"🔧 Настройка {len(handler_modules)} модулей обработчиков...")
-
-    # Создаем реестр
-    registry = create_handler_registry(config, database, menu_manager, menu_registry)
-
-    # Регистрируем все модули
-    registry.register_modules(handler_modules)
-
-    # Валидируем модули
-    validation_results = registry.validate_modules()
-    failed_modules = [
-        name for name, success in validation_results.items() if not success
-    ]
-
-    if failed_modules:
-        logger.error(f"❌ Модули с ошибками: {failed_modules}")
-        raise RuntimeError(f"Не удалось настроить модули: {failed_modules}")
-
-    # Настраиваем диспетчер
-    registry.setup_dispatcher(dispatcher)
-
-    # Выводим статистику
-    stats = registry.get_statistics()
-    logger.info(
-        f"✅ Настройка завершена: {stats['total_modules']} модулей, {stats['menu_count']} меню"
-    )
-
-    return registry
-
-
-def validate_handler_module(module: HandlerModule) -> bool:
-    """Проверить один модуль на валидность"""
-    try:
-        # Проверяем наличие обязательных атрибутов
-        if not hasattr(module, "get_router"):
-            logger.error(f"❌ {module.__name__}: отсутствует get_router()")
-            return False
-
-        # Проверяем, что get_router - это функция
-        if not callable(getattr(module, "get_router")):
-            logger.error(f"❌ {module.__name__}: get_router не является функцией")
-            return False
-
-        # Проверяем setup_menus если есть
-        if hasattr(module, "setup_menus") and not callable(
-            getattr(module, "setup_menus")
-        ):
-            logger.error(f"❌ {module.__name__}: setup_menus не является функцией")
-            return False
-
-        logger.info(f"✅ {module.__name__}: структура модуля корректна")
-        return True
-
-    except Exception as e:
-        logger.error(f"❌ {module.__name__}: ошибка валидации - {e}")
-        return False
+        logger.info("Валидация модулей пройдена успешно")
