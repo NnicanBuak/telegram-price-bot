@@ -3,10 +3,8 @@ import logging
 import sys
 from typing import Any, Awaitable, Callable, Dict
 
-from aiogram import Bot, Dispatcher, types, Router, F
-from aiogram.filters import CommandStart, Command
+from aiogram import Bot, Dispatcher, types
 from aiogram.fsm.storage.memory import MemoryStorage
-from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 
 from config import Config
 from database import Database
@@ -92,15 +90,43 @@ async def main():
         dp.callback_query.middleware.register(dependency_middleware)
 
         # Регистрация обработчиков
-        handler_registry = handlers.setup_basic_handlers(
-            config, database, menu_manager, menu_registry, dp
+
+        # registry = handlers.setup_basic_handlers(
+        #     config, database, menu_manager, menu_registry, dp
+        # )
+
+        registry = handlers.create_handler_registry(
+            config, database, menu_manager, menu_registry
         )
-        logger.info("✅ Обработчики зарегистрированы")
+
+        registry.register_module(handlers.commands)
+
+        stats = registry.get_statistics()
+        logger.info(f"✅ Зарегистрировано модулей: {stats['total_modules']}")
+        logger.info(f"📋 Модули: {', '.join(stats['module_names'])}")
+        logger.info(f"🔗 Меню: {stats['menu_count']}")
+        logger.info(f"📡 Роутеры: {stats['total_routers']}")
 
         # Проверка подключения к Telegram
         bot_info = await bot.get_me()
         logger.info(f"✅ Бот @{bot_info.username} готов к работе!")
-        logger.info(f"📊 Статистика: ID {bot_info.id}, имя: {bot_info.first_name}")
+        logger.info(f"📊 Информация: ID {bot_info.id}, Name: {bot_info.first_name}")
+
+        # Отправка сообщения при разработке
+        if config.environment == "development":
+            for user_id in config.admin_ids:
+                try:
+                    await bot.send_message(
+                        chat_id=user_id,
+                        text="""Бот начал свою работу.
+Автовызов /start...""",
+                    )
+                    logger.info("☑️ Бот начал свою работу для {user_id}")
+                except Exception as e:
+                    logger.warning(
+                        """❌ Бот не смог начать свою работу для {user_id} по причние:
+                        {e}"""
+                    )
 
         # Запуск polling
         logger.info("🎯 Начало обработки сообщений...")

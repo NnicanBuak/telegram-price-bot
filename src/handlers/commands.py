@@ -1,7 +1,3 @@
-"""
-Обработчики команд бота (/start, /help, /id и т.д.)
-"""
-
 import logging
 from aiogram import Router, types
 from aiogram.filters import CommandStart, Command

@@ -44,6 +44,7 @@ class Config:
         )
 
         # === НАСТРОЙКИ РАЗВЕРТЫВАНИЯ ===
+        self.environment = os.getenv("ENVIRONMENT", "production")
         self.debug = os.getenv("DEBUG", "false").lower() == "true"
         self.port = int(os.getenv("PORT", "8080"))
         self.host = os.getenv("HOST", "0.0.0.0")

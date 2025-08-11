@@ -1,7 +1,3 @@
-"""
-Базовый класс для регистрации всех обработчиков в проекте
-"""
-
 import logging
 from typing import List, Type, Protocol, Dict, Any
 from aiogram import Dispatcher, Router
@@ -12,16 +8,27 @@ from database import Database
 logger = logging.getLogger(__name__)
 
 
-class HandlerModule(Protocol):
-    """Протокол для модулей с обработчиками"""
+class HandlerDependencies:
+    """Контейнер зависимостей для обработчиков"""
 
-    @staticmethod
-    def get_router(
+    def __init__(
+        self,
         config: Config,
         database: Database,
         menu_manager: MenuManager,
         menu_registry: MenuRegistry,
-    ) -> Router:
+    ):
+        self.config = config
+        self.database = database
+        self.menu_manager = menu_manager
+        self.menu_registry = menu_registry
+
+
+class HandlerModule(Protocol):
+    """Протокол для модулей с обработчиками"""
+
+    @staticmethod
+    def get_router(dependencies: HandlerDependencies) -> Router:
         """Возвращает роутер с настроенными обработчиками"""
         ...
 
