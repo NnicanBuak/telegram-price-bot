@@ -3,8 +3,8 @@
 """
 
 from .base import BaseKeyboard, MenuKeyboard, UtilityKeyboards, NavigationKeyboards
-from .pagination import (
-    PaginationKeyboard,
+from .paginated import (
+    PaginatedKeyboard,
     ListKeyboard,
     SearchKeyboard,
     create_paginated_list,

@@ -135,6 +135,52 @@ class NavigationState:
         self.context.clear()
 
 
+@dataclass
+class MenuItem:
+    text: str
+    callback_data: Optional[str] = None
+    url: Optional[str] = None
+    icon: str = ""
+    admin_only: bool = False
+
+    @property
+    def button_text(self) -> str:
+        """Текст кнопки с иконкой"""
+        return f"{self.icon} {self.text}".strip() if self.icon else self.text
+
+
+@dataclass
+class Menu:
+    """Модель меню"""
+
+    config: MenuConfig
+    buttons: List[MenuButton] = field(default_factory=list)
+
+    def add_button(self, button: MenuButton) -> "Menu":
+        """Добавить кнопку в меню"""
+        self.buttons.append(button)
+        self._sort_buttons()
+        return self
+
+    def add_buttons(self, buttons: List[MenuButton]) -> "Menu":
+        """Добавить сразу несколько кнопок"""
+        self.buttons.extend(buttons)
+        self._sort_buttons()
+        return self
+
+    def _sort_buttons(self):
+        """Сортировать кнопки по order"""
+        self.buttons.sort(key=lambda b: b.order)
+
+    def get_visible_buttons(self, is_admin: bool = False) -> List[MenuButton]:
+        """Вернуть только те кнопки, которые видимы пользователю"""
+        return [b for b in self.buttons if b.visible and (not b.admin_only or is_admin)]
+
+    def to_structure(self) -> MenuStructure:
+        """Преобразовать в MenuStructure для рендера"""
+        return MenuStructure(config=self.config, buttons=self.buttons)
+
+
 # Типы для кастомизации
 MenuValidator = Callable[[MenuStructure, int], bool]
 MenuRenderer = Callable[[MenuStructure, Dict[str, Any]], MenuResponse]

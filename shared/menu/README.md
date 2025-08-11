@@ -31,7 +31,7 @@
 ### 1. Подключение
 
 ```python
-from shared.menu import create_menu_system, MenuBuilder
+from menu import create_menu_system, MenuBuilder
 
 # Создаем систему меню
 menu_manager, menu_registry = create_menu_system([123456789])  # ID админов

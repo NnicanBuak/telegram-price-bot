@@ -5,7 +5,7 @@ from .base import BaseKeyboard
 from ..paginator import Paginator, PaginationConfig, PaginationHelper
 
 
-class PaginationKeyboard(BaseKeyboard):
+class PaginatedKeyboard(BaseKeyboard):
     """Класс для создания пагинированных клавиатур"""
 
     @staticmethod
@@ -32,7 +32,7 @@ class PaginationKeyboard(BaseKeyboard):
 
         # Навигация по страницам
         if config.show_navigation and paginator.total_pages > 1:
-            nav_buttons = PaginationKeyboard._create_navigation_buttons(
+            nav_buttons = PaginatedKeyboard._create_navigation_buttons(
                 paginator, config
             )
             if nav_buttons:
@@ -66,7 +66,7 @@ class PaginationKeyboard(BaseKeyboard):
 
             item_to_button_func = default_item_to_button
 
-        return PaginationKeyboard.create_from_paginator(
+        return PaginatedKeyboard.create_from_paginator(
             paginator, item_to_button_func, config, additional_buttons
         )
 
@@ -266,9 +266,7 @@ class SearchKeyboard:
             )
 
         config = PaginationConfig(items_per_page=items_per_page)
-        return PaginationKeyboard.create_from_items(
-            results, page, create_button, config
-        )
+        return PaginatedKeyboard.create_from_items(results, page, create_button, config)
 
 
 def create_paginated_list(
@@ -291,4 +289,4 @@ def create_paginated_list(
         button_text = f"{item_icon} {text}".strip() if item_icon else text
         return InlineKeyboardButton(text=button_text, callback_data=callback_data)
 
-    return PaginationKeyboard.create_from_items(items, page, item_to_button, config)
+    return PaginatedKeyboard.create_from_items(items, page, item_to_button, config)
