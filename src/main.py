@@ -8,10 +8,10 @@ from aiogram.filters import CommandStart, Command
 from aiogram.fsm.storage.memory import MemoryStorage
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 
-from shared.menu import create_menu_system, MenuBuilder
 from config import Config
 from database import Database
-from core_handlers import CoreHandlers
+import menu
+import handlers
 
 # Инициализируем конфигурацию и логирование
 config = Config()
@@ -75,7 +75,7 @@ async def main():
 
         # Инициализация системы меню
         logger.info("📋 Настройка системы меню...")
-        menu_manager, menu_registry = create_menu_system(config.admin_ids)
+        menu_manager, menu_registry = menu.create_menu_system(config.admin_ids)
         logger.info("✅ Система меню готова")
 
         # Инициализация бота
@@ -91,15 +91,10 @@ async def main():
         dp.message.middleware.register(dependency_middleware)
         dp.callback_query.middleware.register(dependency_middleware)
 
-        # Регистрация основных обработчиков
-        core_handlers = CoreHandlers(config, menu_manager)
-        dp.include_router(core_handlers.router)
-
-        # Регистрация роутеров
-        dp.include_router(
-            menu_registry.register_menu_group("", ["templates", "groups", "mailing"])
+        # Регистрация обработчиков
+        handler_registry = handlers.setup_basic_handlers(
+            config, database, menu_manager, menu_registry, dp
         )
-
         logger.info("✅ Обработчики зарегистрированы")
 
         # Проверка подключения к Telegram

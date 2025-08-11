@@ -5,16 +5,12 @@ from pathlib import Path
 import os
 from dotenv import load_dotenv
 
-# Загружаем .env
 load_dotenv()
 
 project_root = Path(__file__).parent
 src_path = project_root / "src"
-shared_path = project_root / "shared"
 
-# Добавляем src и shared в path для импортов
 sys.path.insert(0, str(src_path))
-sys.path.insert(0, str(shared_path))
 
 
 def start():
@@ -34,12 +30,11 @@ if __name__ == "__main__":
                 from watchfiles import run_process
 
                 print("♻️  Режим hot reload активирован (ENVIRONMENT=development)")
-                run_process(src_path, shared_path, target=start)
+                run_process(src_path, target=start)
             except ImportError:
                 print("⚠️  watchfiles не установлен — запуск без hot reload")
                 start()
         else:
-            # production / testing — без hot reload
             start()
 
     except KeyboardInterrupt:

@@ -57,7 +57,7 @@ menu_manager.register_menu(main_menu)
 
 ```python
 from aiogram import Router, types, F
-from shared.menu import menu_handler
+from menu import menu_handler
 
 router = Router()
 
@@ -154,7 +154,7 @@ current = menu_manager.get_current_menu(user_id)
 #### CRUD меню
 
 ```python
-from shared.menu import create_crud_menu
+from menu import create_crud_menu
 
 templates_menu = (create_crud_menu("templates", "Шаблоны сообщений")
     .add_action("Экспорт", "export_all", "📤", admin_only=True)
@@ -169,7 +169,7 @@ templates_menu = (create_crud_menu("templates", "Шаблоны сообщени
 #### Меню подтверждения
 
 ```python
-from shared.menu import create_confirmation_menu
+from menu import create_confirmation_menu
 
 confirm_menu = (create_confirmation_menu(
     "confirm_delete",
@@ -182,7 +182,7 @@ confirm_menu = (create_confirmation_menu(
 #### Простое меню
 
 ```python
-from shared.menu import create_simple_menu
+from menu import create_simple_menu
 
 about_menu = (create_simple_menu("about", "ℹ️ О боте", "Информация о боте")
     .add_action("Версия", "show_version", "🔢")
@@ -241,7 +241,7 @@ menu_manager.clear_navigation(user_id)
 ### Декоратор для callback'ов
 
 ```python
-from shared.menu import menu_handler
+from menu import menu_handler
 
 @menu_handler(menu_manager, "help")
 async def handle_help(callback: types.CallbackQuery, context: dict):
@@ -258,7 +258,7 @@ async def handle_create(callback: types.CallbackQuery, context: dict):
 ### Декоратор для открытия меню
 
 ```python
-from shared.menu import menu_opener
+from menu import menu_opener
 
 @menu_opener(menu_manager, "settings")
 async def on_settings_open(target, user_id: int, context: dict):
@@ -402,7 +402,7 @@ from aiogram import Router, types, F
 from aiogram.filters import CommandStart
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
-from shared.menu import (
+from menu import (
     create_menu_system, MenuBuilder, create_crud_menu,
     menu_handler, menu_opener
 )
