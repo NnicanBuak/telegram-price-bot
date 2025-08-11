@@ -282,16 +282,6 @@ class MenuRegistry:
 
         return menus
 
-    def register_feature_menus(self, feature_name: str, menus: List[MenuStructure]):
-        """Зарегистрировать меню feature"""
-        menu_ids = []
-
-        for menu in menus:
-            self.menu_manager.register_menu(menu)
-            menu_ids.append(menu.config.id)
-
-        self.register_menu_group(feature_name, menu_ids)
-
 
 # === ДЕКОРАТОРЫ ДЛЯ УПРОЩЕНИЯ ===
 

@@ -353,9 +353,6 @@ menu_manager.renderer.register_custom_renderer("special_menu", custom_renderer)
 # Организация меню по группам
 menu_registry.register_menu_group("features", ["templates", "groups", "mailing"])
 menu_registry.register_menu_group("admin", ["settings", "logs", "backup"])
-
-# Получение группы меню
-feature_menus = menu_registry.get_menu_group("features")
 ```
 
 ## 📚 API Reference

@@ -1,7 +1,6 @@
 import logging
 from aiogram import Router, F, types
 from aiogram.filters import CommandStart, Command
-
 from shared.menu import create_menu_system, MenuBuilder, create_crud_menu
 from config import Config
 from database import Database
@@ -110,58 +109,18 @@ class CoreHandlers:
 
         logger.info(f"Администратор {user_id} запустил бота")
 
-        # Показываем главное меню через обновленный интерфейс
-        await self.show_main_menu_direct(message)
-
-    async def show_main_menu_direct(self, message: types.Message):
-        """Показать главное меню напрямую"""
-        text = """🏠 <b>Главное меню</b>
-
-Добро пожаловать в Telegram Price Bot!
-
-Выберите нужную функцию:"""
-
-        keyboard = InlineKeyboardMarkup(
-            inline_keyboard=[
-                [
-                    InlineKeyboardButton(
-                        text="📄 Шаблоны сообщений", callback_data="menu_templates"
-                    )
-                ],
-                [
-                    InlineKeyboardButton(
-                        text="👥 Группы чатов", callback_data="menu_groups"
-                    )
-                ],
-                [
-                    InlineKeyboardButton(
-                        text="📮 Рассылка", callback_data="menu_mailing"
-                    )
-                ],
-                [
-                    InlineKeyboardButton(
-                        text="📊 История рассылок", callback_data="mailings_history"
-                    )
-                ],
-                [
-                    InlineKeyboardButton(
-                        text="⚙️ Настройки", callback_data="menu_settings"
-                    )
-                ],
-            ]
-        )
-
-        await message.answer(text, reply_markup=keyboard, parse_mode="HTML")
+        # Показываем главное меню через новую систему меню
+        await self.menu_manager.navigate_to("main", message, user_id)
 
     async def cmd_help(self, message: types.Message):
         """Команда /help"""
         help_text = """📋 <b>Справка по боту</b>
 
 <b>🔹 Основные функции:</b>
-• <b>Шаблоны</b> - создание сообщений с файлами и текстом
-• <b>Группы</b> - объединение чатов для рассылки
-• <b>Рассылка</b> - отправка по выбранным группам
-• <b>История</b> - статистика и мониторинг отправок
+- <b>Шаблоны</b> - создание сообщений с файлами и текстом
+- <b>Группы</b> - объединение чатов для рассылки
+- <b>Рассылка</b> - отправка по выбранным группам
+- <b>История</b> - статистика и мониторинг отправок
 
 <b>🔹 Команды:</b>
 /start - главное меню
@@ -258,24 +217,24 @@ class CoreHandlers:
             status_text = f"""📊 <b>Статус системы</b>
 
 🤖 <b>Бот:</b>
-• Статус: ✅ Активен
-• Администраторы: {len(self.config.admin_ids)}
-• Режим отладки: {'🔧 Вкл' if self.config.debug else '🔒 Выкл'}
+- Статус: ✅ Активен
+- Администраторы: {len(self.config.admin_ids)}
+- Режим отладки: {'🔧 Вкл' if self.config.debug else '🔒 Выкл'}
 
 💾 <b>База данных:</b>
-• Шаблоны: {templates_count}
-• Группы: {groups_count}  
-• Рассылки: {mailings_count}
+- Шаблоны: {templates_count}
+- Группы: {groups_count}  
+- Рассылки: {mailings_count}
 
 🖥️ <b>Система:</b>
-• Память: {memory_usage:.1f}%
-• Диск: {disk_usage:.1f}%
-• Аптайм: {str(uptime).split('.')[0]}
+- Память: {memory_usage:.1f}%
+- Диск: {disk_usage:.1f}%
+- Аптайм: {str(uptime).split('.')[0]}
 
 📁 <b>Директории:</b>
-• Данные: {self.config.data_dir} ({'✅' if self.config.data_dir.exists() else '❌'})
-• Логи: {self.config.log_dir} ({'✅' if self.config.log_dir.exists() else '❌'})
-• БД: {self.config.db_dir} ({'✅' if self.config.db_dir.exists() else '❌'})"""
+- Данные: {self.config.data_dir} ({'✅' if self.config.data_dir.exists() else '❌'})
+- Логи: {self.config.log_dir} ({'✅' if self.config.log_dir.exists() else '❌'})
+- БД: {self.config.db_dir} ({'✅' if self.config.db_dir.exists() else '❌'})"""
 
             await message.answer(status_text, parse_mode="HTML")
 
@@ -283,144 +242,25 @@ class CoreHandlers:
             logger.error(f"Ошибка получения статуса: {e}")
             await message.answer(f"❌ Ошибка получения статуса: {e}")
 
+    # Методы для навигации между меню с использованием новой системы меню
     async def show_main_menu(self, callback: types.CallbackQuery):
         """Показать главное меню через callback"""
-        text = """🏠 <b>Главное меню</b>
-
-Добро пожаловать в Telegram Price Bot!
-
-Выберите нужную функцию:"""
-
-        keyboard = InlineKeyboardMarkup(
-            inline_keyboard=[
-                [
-                    InlineKeyboardButton(
-                        text="📄 Шаблоны сообщений", callback_data="menu_templates"
-                    )
-                ],
-                [
-                    InlineKeyboardButton(
-                        text="👥 Группы чатов", callback_data="menu_groups"
-                    )
-                ],
-                [
-                    InlineKeyboardButton(
-                        text="📮 Рассылка", callback_data="menu_mailing"
-                    )
-                ],
-                [
-                    InlineKeyboardButton(
-                        text="📊 История рассылок", callback_data="mailings_history"
-                    )
-                ],
-                [
-                    InlineKeyboardButton(
-                        text="⚙️ Настройки", callback_data="menu_settings"
-                    )
-                ],
-            ]
-        )
-
-        await callback.message.edit_text(text, reply_markup=keyboard, parse_mode="HTML")
-        await callback.answer()
+        await self.menu_manager.navigate_to("main", callback, callback.from_user.id)
 
     async def show_templates_menu(self, callback: types.CallbackQuery):
         """Показать меню шаблонов"""
-        text = """📄 <b>Управление шаблонами</b>
-
-Создавайте и управляйте шаблонами сообщений для рассылки.
-Выберите действие:"""
-
-        keyboard = InlineKeyboardMarkup(
-            inline_keyboard=[
-                [
-                    InlineKeyboardButton(
-                        text="➕ Создать", callback_data="template_create"
-                    )
-                ],
-                [InlineKeyboardButton(text="📋 Список", callback_data="template_list")],
-                [InlineKeyboardButton(text="◀️ Назад", callback_data="menu_main")],
-            ]
+        await self.menu_manager.navigate_to(
+            "templates", callback, callback.from_user.id
         )
-
-        await callback.message.edit_text(text, reply_markup=keyboard, parse_mode="HTML")
-        await callback.answer()
 
     async def show_groups_menu(self, callback: types.CallbackQuery):
         """Показать меню групп"""
-        text = """👥 <b>Управление группами чатов</b>
-
-Создавайте группы чатов для организации рассылок.
-Выберите действие:"""
-
-        keyboard = InlineKeyboardMarkup(
-            inline_keyboard=[
-                [
-                    InlineKeyboardButton(
-                        text="➕ Создать группу", callback_data="group_create"
-                    )
-                ],
-                [
-                    InlineKeyboardButton(
-                        text="📋 Список групп", callback_data="groups_list"
-                    )
-                ],
-                [InlineKeyboardButton(text="◀️ Назад", callback_data="menu_main")],
-            ]
-        )
-
-        await callback.message.edit_text(text, reply_markup=keyboard, parse_mode="HTML")
-        await callback.answer()
+        await self.menu_manager.navigate_to("groups", callback, callback.from_user.id)
 
     async def show_mailing_menu(self, callback: types.CallbackQuery):
         """Показать меню рассылки"""
-        text = """📮 <b>Рассылка сообщений</b>
-
-Создавайте и запускайте рассылки по группам чатов.
-Выберите действие:"""
-
-        keyboard = InlineKeyboardMarkup(
-            inline_keyboard=[
-                [
-                    InlineKeyboardButton(
-                        text="📮 Создать рассылку", callback_data="mailing_create"
-                    )
-                ],
-                [
-                    InlineKeyboardButton(
-                        text="📊 История рассылок", callback_data="mailings_history"
-                    )
-                ],
-                [InlineKeyboardButton(text="◀️ Назад", callback_data="menu_main")],
-            ]
-        )
-
-        await callback.message.edit_text(text, reply_markup=keyboard, parse_mode="HTML")
-        await callback.answer()
+        await self.menu_manager.navigate_to("mailing", callback, callback.from_user.id)
 
     async def show_settings_menu(self, callback: types.CallbackQuery):
         """Показать меню настроек"""
-        text = """⚙️ <b>Настройки системы</b>
-
-Управление конфигурацией и мониторинг системы.
-Выберите действие:"""
-
-        keyboard = InlineKeyboardMarkup(
-            inline_keyboard=[
-                [
-                    InlineKeyboardButton(
-                        text="📊 Статус системы", callback_data="system_status"
-                    )
-                ],
-                [
-                    InlineKeyboardButton(
-                        text="📋 Конфигурация", callback_data="system_config"
-                    )
-                ],
-                [InlineKeyboardButton(text="📝 Логи", callback_data="system_logs")],
-                [InlineKeyboardButton(text="◀️ Назад", callback_data="menu_main")],
-            ]
-        )
-
-        await callback.message.edit_text(text, reply_markup=keyboard, parse_mode="HTML")
-        await callback.answer()
+        await self.menu_manager.navigate_to("settings", callback, callback.from_user.id)

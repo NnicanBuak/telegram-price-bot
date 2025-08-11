@@ -136,30 +136,11 @@ class Config:
         """Настройка системы логирования"""
         from logging.handlers import RotatingFileHandler
 
-        # Создаем папку для логов
-        log_path = Path(self.log_file)
-        log_path.parent.mkdir(parents=True, exist_ok=True)
-
         # Настройка форматирования
         formatter = logging.Formatter(
             fmt="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
             datefmt="%Y-%m-%d %H:%M:%S",
         )
-
-        # Обработчик для файла с ротацией
-        file_handler = RotatingFileHandler(
-            filename=self.log_file,
-            maxBytes=self.log_max_size,
-            backupCount=self.log_backup_count,
-            encoding="utf-8",
-        )
-        file_handler.setFormatter(formatter)
-        file_handler.setLevel(getattr(logging, self.log_level))
-
-        # Обработчик для консоли
-        console_handler = logging.StreamHandler()
-        console_handler.setFormatter(formatter)
-        console_handler.setLevel(logging.INFO)
 
         # Настройка root logger
         root_logger = logging.getLogger()
@@ -168,12 +149,33 @@ class Config:
         # Очищаем существующие обработчики
         root_logger.handlers.clear()
 
-        # Добавляем наши обработчики
-        root_logger.addHandler(file_handler)
-
-        # Консольный вывод только если не в продакшене
+        # Консольный вывод
         if self.debug or os.getenv("CONSOLE_LOG", "true").lower() == "true":
+            console_handler = logging.StreamHandler()
+            console_handler.setFormatter(formatter)
+            console_handler.setLevel(logging.INFO)
             root_logger.addHandler(console_handler)
+
+        # Обработчик для файла с ротацией, только если задан путь к файлу
+        if self.log_file and self.log_file.strip():
+            try:
+                # Создаем папку для логов
+                log_path = Path(self.log_file)
+                log_dir = log_path.parent
+                log_dir.mkdir(parents=True, exist_ok=True)
+
+                file_handler = RotatingFileHandler(
+                    filename=str(log_path),
+                    maxBytes=self.log_max_size,
+                    backupCount=self.log_backup_count,
+                    encoding="utf-8",
+                )
+                file_handler.setFormatter(formatter)
+                file_handler.setLevel(getattr(logging, self.log_level))
+                root_logger.addHandler(file_handler)
+            except Exception as e:
+                print(f"Ошибка настройки файла логирования: {e}")
+                print("Логи будут выводиться только в консоль.")
 
         # Отключаем избыточное логирование от aiogram
         logging.getLogger("aiogram").setLevel(logging.WARNING)

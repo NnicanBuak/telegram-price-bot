@@ -11,7 +11,6 @@ from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 from shared.menu import create_menu_system, MenuBuilder
 from config import Config
 from database import Database
-from features import setup_features
 from core_handlers import CoreHandlers
 
 # Инициализируем конфигурацию и логирование
@@ -24,9 +23,9 @@ logger = logging.getLogger(__name__)
 class DependencyMiddleware:
     """Middleware для внедрения зависимостей"""
 
-    def __init__(self, database: Database, feature_registry, config: Config):
+    def __init__(self, database: Database, menu_registry, config: Config):
         self.database = database
-        self.feature_registry = feature_registry
+        self.menu_registry = menu_registry
         self.config = config
 
     async def __call__(
@@ -39,10 +38,10 @@ class DependencyMiddleware:
         data.update(
             {
                 "database": self.database,
-                "feature_registry": self.feature_registry,
+                "menu_registry": self.menu_registry,
                 "config": self.config,
                 # Добавляем сервисы для удобства
-                **self.feature_registry.get_all_services(),
+                **self.menu_registry.get_all_services(),
             }
         )
         return await handler(event, data)
@@ -74,14 +73,9 @@ async def main():
         await database.init()
         logger.info("✅ База данных готова")
 
-        # Инициализация features
-        logger.info("🔧 Настройка features...")
-        feature_registry = setup_features(database)
-        logger.info("✅ Features инициализированы")
-
         # Инициализация системы меню
         logger.info("📋 Настройка системы меню...")
-        menu_manager = feature_registry.setup_menu_system(config.admin_ids)
+        menu_manager, menu_registry = create_menu_system(config.admin_ids)
         logger.info("✅ Система меню готова")
 
         # Инициализация бота
@@ -91,7 +85,7 @@ async def main():
         dp = Dispatcher(storage=storage)
 
         # Настройка middleware
-        dependency_middleware = DependencyMiddleware(database, feature_registry, config)
+        dependency_middleware = DependencyMiddleware(database, menu_registry, config)
 
         # Регистрируем middleware для внедрения зависимостей
         dp.message.middleware.register(dependency_middleware)
@@ -101,9 +95,10 @@ async def main():
         core_handlers = CoreHandlers(config, menu_manager)
         dp.include_router(core_handlers.router)
 
-        # Регистрация роутеров features
-        for router in feature_registry.get_routers():
-            dp.include_router(router)
+        # Регистрация роутеров
+        dp.include_router(
+            menu_registry.register_menu_group("", ["templates", "groups", "mailing"])
+        )
 
         logger.info("✅ Обработчики зарегистрированы")
 
