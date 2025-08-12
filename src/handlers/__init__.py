@@ -1,3 +1,8 @@
+"""
+Пакет обработчиков для Telegram бота
+Простая архитектура с роутерами
+"""
+
 from . import commands
 from . import menu_navigation
 from . import templates
@@ -6,23 +11,6 @@ from . import mailing
 
 # Список всех модулей с обработчиками
 HANDLER_MODULES = [commands, menu_navigation, templates, groups, mailing]
-
-
-def create_handler_registry(
-    config, database, menu_manager, menu_registry, service_registry
-):
-    """Создать и настроить реестр обработчиков"""
-    registry = HandlerRegistry()
-
-    # Регистрируем модуль команд
-    registry.register_module(
-        commands.CommandsModule("commands", config, database, menu_manager)
-    )
-
-    # Настраиваем основные меню
-    menu_navigation.setup_menus(menu_manager)
-
-    return registry
 
 
 def setup_dispatcher_with_handlers(
@@ -39,36 +27,35 @@ def setup_dispatcher_with_handlers(
             self.menu_registry = menu_registry
             self.service_registry = service_registry
 
+            # Добавляем все сервисы как атрибуты для удобства
+            services = service_registry.get_all_services()
+            for service_name, service_instance in services.items():
+                setattr(self, service_name, service_instance)
+
     deps = Dependencies()
 
     # Настраиваем основные меню
     menu_navigation.setup_menus(menu_manager)
 
-    # Регистрируем роутеры
+    # Регистрируем роутеры всех модулей
+    registered_count = 0
     for module in HANDLER_MODULES:
         if hasattr(module, "get_router"):
             try:
                 router = module.get_router(deps)
                 dispatcher.include_router(router)
+                registered_count += 1
+                print(f"✅ Зарегистрирован роутер модуля {module.__name__}")
             except Exception as e:
-                print(f"Ошибка регистрации роутера модуля {module.__name__}: {e}")
+                print(f"❌ Ошибка регистрации роутера модуля {module.__name__}: {e}")
 
-    # Создаем реестр обработчиков для команд
-    registry = create_handler_registry(
-        config, database, menu_manager, menu_registry, service_registry
-    )
-    registry.setup_dispatcher(dispatcher)
-
-    return registry
+    print(f"🎯 Всего зарегистрировано роутеров: {registered_count}")
+    return deps  # Возвращаем deps вместо registry
 
 
 # Экспортируем все необходимое для удобного использования
 __all__ = [
-    # Основные классы и функции
-    "HandlerRegistry",
-    "HandlerModule",
     "HANDLER_MODULES",
-    "create_handler_registry",
     "setup_dispatcher_with_handlers",
     "commands",
     "menu_navigation",
