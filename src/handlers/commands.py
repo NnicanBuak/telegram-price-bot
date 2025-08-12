@@ -1,92 +1,48 @@
 import logging
+from aiogram import Router, types, F
+from aiogram.filters import CommandStart, Command
 
-from .base import HandlerModule, BaseHandler, HandlerContext
+from services import bot
 
 logger = logging.getLogger(__name__)
 
 
-class CommandsModule(HandlerModule):
-    def _setup_handlers(self):
-        self.register_handler(
-            "start", StartCommandHandler(self.config, self.database, self.menu_manager)
-        )
-        self.register_handler(
-            "help", HelpCommandHandler(self.config, self.database, self.menu_manager)
-        )
-        self.register_handler(
-            "id", IdCommandHandler(self.config, self.database, self.menu_manager)
-        )
+def get_router(deps) -> Router:
+    """Возвращает роутер с обработчиками команд"""
+    router = Router()
 
+    @router.message(CommandStart())
+    async def cmd_start(message: types.Message):
+        """Команда /start"""
+        user_id = message.from_user.id
 
-class StartCommandHandler(BaseHandler):
-    async def execute(self, ctx: HandlerContext) -> bool:
-        user_id = ctx.message.from_user.id
-
-        if not ctx.is_programmatic and not ctx.config.is_admin(user_id):
-            logger.warning(f"Неавторизованный доступ от пользователя {user_id}")
-            await ctx.message.answer(
+        if not deps.config.is_admin(user_id):
+            await message.answer(
                 "❌ <b>Доступ запрещен</b>\n\n"
                 "Этот бот доступен только администраторам.",
-                parse_mode=self.config.parse_mode,
+                parse_mode=deps.config.parse_mode,
             )
             return
 
-        if not ctx.is_programmatic:
-            logger.info(f"Администратор {user_id} запустил бота")
-            await self.menu_manager.navigate_to("main", ctx.message, user_id)
-        else:
-            await self.menu_manager.sender.send_menu("main")
+        logger.info(f"Администратор {user_id} запустил бота")
 
-
-class HelpCommandHandler(BaseHandler):
-    async def execute(self, ctx: HandlerContext) -> bool:
-        help_text = """📋 <b>Справка по боту</b>
-
-<b>🔹 Основные функции:</b>
-- <b>Шаблоны</b> - создание сообщений с файлами и текстом
-- <b>Группы</b> - объединение чатов для рассылки
-- <b>Рассылка</b> - отправка по выбранным группам
-- <b>История</b> - статистика и мониторинг отправок
-
-<b>🔹 Команды:</b>
-/start - главное меню
-/help - эта справка
-/id - получить ID чата
-/config - информация о конфигурации
-/status - статус системы
-
-<b>🔹 Как начать:</b>
-1. Создайте шаблон сообщения
-2. Добавьте группы чатов (получите ID командой /id в чатах)
-3. Запустите рассылку
-
-<b>💡 Совет:</b> Добавьте бота в чаты как администратора для корректной работы."""
-
-        await ctx.message.answer(help_text, parse_mode=self.config.parse_mode)
-
-
-class IdCommandHandler(BaseHandler):
-    async def execute(self, ctx: HandlerContext):
-        """Команда /id"""
-        chat_type_names = {
-            "private": "Приватный чат",
-            "group": "Группа",
-            "supergroup": "Супергруппа",
-            "channel": "Канал",
-        }
-
-        info = (
-            f"💬 <b>Информация о чате</b>\n\n"
-            f"🔢 <b>ID чата:</b> <code>{ctx.message.chat.id}</code>\n"
-            f"📱 <b>Тип:</b> {chat_type_names.get(ctx.message.chat.type, ctx.message.chat.type)}\n"
-            f"👤 <b>Ваш ID:</b> <code>{ctx.message.from_user.id}</code>\n"
+        success = await deps.menu_manager.show_menu(
+            menu_id="main", bot=bot, chat_id=message.chat.id
         )
 
-        if ctx.message.chat.title:
-            info += f"📝 <b>Название:</b> {ctx.message.chat.title}\n"
-        if ctx.message.from_user.username:
-            info += f"📮 <b>Username:</b> @{ctx.message.from_user.username}\n"
+        if not success:
+            await message.answer("❌ Ошибка загрузки меню")
 
-        info += "\n💡 <i>Используйте ID чата для добавления в группы рассылки</i>"
+    @router.message(Command("help"))
+    async def cmd_help(message: types.Message):
+        """Команда /help"""
+        help_text = await bot.get_help_text()
+        await message.answer(help_text, parse_mode=deps.config.parse_mode)
 
-        await ctx.message.answer(info, parse_mode=self.config.parse_mode)
+    @router.message(Command("id"))
+    async def cmd_id(message: types.Message):
+        """Команда /id"""
+        info_text = bot.get_chat_info(message)
+        await message.answer(info_text, parse_mode=deps.config.parse_mode)
+
+    return router

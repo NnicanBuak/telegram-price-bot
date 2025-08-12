@@ -311,27 +311,62 @@ class MenuSender:
     async def send_menu(
         self,
         menu: MenuStructure,
-        target: Union[Message, CallbackQuery],
-        user_id: int,
+        target: Union[Message, CallbackQuery] = None,
+        user_id: int = None,
+        bot: Bot = None,
+        chat_id: int = None,
         context: Dict[str, Any] = None,
     ) -> bool:
-        """Отправить меню пользователю"""
-        try:
-            response = self.renderer.render(menu, user_id, context)
+        """
+        Отправить меню пользователю
 
-            if isinstance(target, Message):
-                await target.answer(
+        Поддерживает как событийную, так и программную отправку:
+        - Событийная: передать target (Message/CallbackQuery) и user_id
+        - Программная: передать bot, chat_id и user_id
+        """
+        try:
+            # Определяем режим работы
+            if target is not None:
+                # Событийный режим
+                if user_id is None:
+                    user_id = (
+                        target.from_user.id
+                        if hasattr(target, "from_user")
+                        else target.message.from_user.id
+                    )
+
+                response = self.renderer.render(menu, user_id, context)
+
+                if isinstance(target, Message):
+                    await target.answer(
+                        text=response.text,
+                        reply_markup=response.keyboard_markup,
+                        parse_mode=response.parse_mode,
+                    )
+                elif isinstance(target, CallbackQuery):
+                    await target.message.edit_text(
+                        text=response.text,
+                        reply_markup=response.keyboard_markup,
+                        parse_mode=response.parse_mode,
+                    )
+                    await target.answer()
+
+            elif bot is not None and chat_id is not None and user_id is not None:
+                # Программный режим
+                response = self.renderer.render(menu, user_id, context)
+
+                await bot.send_message(
+                    chat_id=chat_id,
                     text=response.text,
                     reply_markup=response.keyboard_markup,
                     parse_mode=response.parse_mode,
                 )
-            elif isinstance(target, CallbackQuery):
-                await target.message.edit_text(
-                    text=response.text,
-                    reply_markup=response.keyboard_markup,
-                    parse_mode=response.parse_mode,
+
+            else:
+                raise ValueError(
+                    "Необходимо передать либо target и user_id (событийный режим), "
+                    "либо bot, chat_id и user_id (программный режим)"
                 )
-                await target.answer()
 
             return True
 
@@ -341,6 +376,24 @@ class MenuSender:
                 await target.answer(f"❌ Ошибка: {str(e)}", show_alert=True)
             return False
 
+    async def send_menu_to_chat(
+        self,
+        menu: MenuStructure,
+        bot: Bot,
+        chat_id: int,
+        user_id: int = None,
+        context: Dict[str, Any] = None,
+    ) -> bool:
+        """
+        Программно отправить меню в чат
+        """
+        if user_id is None:
+            user_id = chat_id
+
+        return await self.send_menu(
+            menu=menu, bot=bot, chat_id=chat_id, user_id=user_id, context=context
+        )
+
     async def update_menu(
         self,
         menu: MenuStructure,
@@ -349,7 +402,7 @@ class MenuSender:
         context: Dict[str, Any] = None,
     ) -> bool:
         """Обновить существующее меню"""
-        return await self.send_menu(menu, callback, user_id, context)
+        return await self.send_menu(menu, callback, user_id, context=context)
 
 
 # === ГОТОВЫЕ БИЛДЕРЫ ДЛЯ ЧАСТЫХ СЛУЧАЕВ ===

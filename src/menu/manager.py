@@ -1,8 +1,13 @@
 from typing import Dict, List, Optional, Callable, Any, Union
 from aiogram.types import CallbackQuery, Message
+from aiogram import Bot
+import asyncio
+import logging
 
 from .models import MenuStructure, NavigationState, ButtonType
 from .renderer import MenuRenderer, MenuSender
+
+logger = logging.getLogger(__name__)
 
 
 class MenuManager:
@@ -38,6 +43,166 @@ class MenuManager:
     def has_menu(self, menu_id: str) -> bool:
         """Проверить существование меню"""
         return menu_id in self._menus
+
+    # === ПРОГРАММНОЕ УПРАВЛЕНИЕ МЕНЮ ===
+
+    async def show_menu(
+        self,
+        menu_id: str,
+        bot: Bot,
+        chat_id: int,
+        user_id: int = None,
+        context: Dict[str, Any] = None,
+    ) -> bool:
+        """
+        Программно показать меню в чате
+        """
+        if user_id is None:
+            user_id = chat_id
+
+        menu = self.get_menu(menu_id)
+        if not menu:
+            logger.error(f"Меню '{menu_id}' не найдено для программного показа")
+            return False
+
+        # Проверяем доступ
+        if menu.config.admin_only and user_id not in self.admin_user_ids:
+            logger.warning(
+                f"Пользователь {user_id} не имеет доступа к меню '{menu_id}'"
+            )
+            return False
+
+        # Обновляем состояние навигации
+        state = self._get_user_state(user_id)
+        state.navigate_to(menu_id)
+
+        # Обогащаем контекст
+        context = context or {}
+        context.update(
+            {
+                "user_id": user_id,
+                "current_menu": menu_id,
+                "navigation_history": state.history.copy(),
+                "is_admin": user_id in self.admin_user_ids,
+            }
+        )
+
+        # Отправляем меню
+        success = await self.sender.send_menu_to_chat(
+            menu=menu, bot=bot, chat_id=chat_id, user_id=user_id, context=context
+        )
+
+        # Вызываем обработчик открытия меню, если есть
+        if success and menu_id in self._menu_handlers:
+            try:
+                await self._menu_handlers[menu_id](None, user_id, context)
+            except Exception as e:
+                logger.error(f"Ошибка в обработчике меню {menu_id}: {e}")
+
+        return success
+
+    async def refresh_current_menu(
+        self,
+        bot: Bot,
+        chat_id: int,
+        user_id: int = None,
+        context: Dict[str, Any] = None,
+    ) -> bool:
+        """
+        Обновить текущее меню пользователя
+
+        Args:
+            bot: Экземпляр бота
+            chat_id: ID чата
+            user_id: ID пользователя (по умолчанию = chat_id)
+            context: Дополнительный контекст
+
+        Returns:
+            bool: Успешность обновления
+        """
+        if user_id is None:
+            user_id = chat_id
+
+        current_menu_id = self.get_current_menu(user_id)
+        if not current_menu_id:
+            logger.warning(f"У пользователя {user_id} нет текущего меню для обновления")
+            return False
+
+        return await self.show_menu(
+            menu_id=current_menu_id,
+            bot=bot,
+            chat_id=chat_id,
+            user_id=user_id,
+            context=context,
+        )
+
+    async def show_menu_to_multiple_chats(
+        self,
+        menu_id: str,
+        bot: Bot,
+        chat_ids: List[int],
+        context: Dict[str, Any] = None,
+    ) -> Dict[int, bool]:
+        """
+        Показать меню в нескольких чатах
+
+        Args:
+            menu_id: ID меню
+            bot: Экземпляр бота
+            chat_ids: Список ID чатов
+            context: Контекст для рендеринга
+
+        Returns:
+            Dict[int, bool]: Результат для каждого чата
+        """
+        results = {}
+
+        for chat_id in chat_ids:
+            try:
+                success = await self.show_menu(
+                    menu_id=menu_id, bot=bot, chat_id=chat_id, context=context
+                )
+                results[chat_id] = success
+
+                # Небольшая задержка между отправками
+                await asyncio.sleep(0.1)
+
+            except Exception as e:
+                logger.error(f"Ошибка отправки меню {menu_id} в чат {chat_id}: {e}")
+                results[chat_id] = False
+
+        return results
+
+    def get_navigation_history(self, user_id: int) -> List[str]:
+        """
+        Получить историю навигации пользователя
+
+        Args:
+            user_id: ID пользователя
+
+        Returns:
+            List[str]: История меню
+        """
+        state = self._get_user_state(user_id)
+        return state.history.copy()
+
+    def get_user_menu_state(self, user_id: int) -> Dict[str, Any]:
+        """
+        Получить полное состояние меню пользователя
+
+        Args:
+            user_id: ID пользователя
+
+        Returns:
+            Dict: Состояние пользователя
+        """
+        state = self._get_user_state(user_id)
+        return {
+            "current_menu": state.current_menu,
+            "history": state.history.copy(),
+            "context": state.context.copy(),
+            "is_admin": user_id in self.admin_user_ids,
+        }
 
     # === НАВИГАЦИЯ ===
 
@@ -77,17 +242,16 @@ class MenuManager:
         )
 
         # Отправляем меню
-        if target:
-                success = await self.sender.send_menu(menu, target, user_id, context)
-            else:
-                success = await self.sender.send_menu(menu, user_id=user_id, context=context)
+        success = await self.sender.send_menu(menu, target, user_id, context)
 
-            if success and menu_id in self._menu_handlers:
+        if success:
+            # Вызываем обработчик меню если есть
+            if menu_id in self._menu_handlers:
                 try:
                     await self._menu_handlers[menu_id](target, user_id, context)
                 except Exception as e:
                     print(f"Ошибка в обработчике меню {menu_id}: {e}")
-                    
+
         return success
 
     async def go_back(
